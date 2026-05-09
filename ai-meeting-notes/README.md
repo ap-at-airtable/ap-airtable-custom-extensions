@@ -51,7 +51,93 @@ block release
 
 ---
 
-## Schema Requirements
+## Schema Setup (Agent-Ready)
+
+Use the instructions below to create the full base schema from scratch. Every table name, field name, field type, and relationship is specified exactly. Create tables and fields in the order listed to ensure link fields resolve correctly.
+
+### Step 1: Create Tables
+
+Create these four tables (in this order):
+
+1. `Projects`
+2. `Meetings`
+3. `Action Items`
+4. `Team Members`
+
+### Step 2: Create Fields
+
+#### Team Members table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+
+#### Projects table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+| `Status` | Single select | Options: `In Progress`, `Planning`, `Launched`, `Completed`, `On Hold` |
+| `Priority` | Single select | Options: `High`, `Medium`, `Low` |
+| `Start Date` | Date | Include time: off |
+| `End Date` | Date | Include time: off |
+| `Brief` | Long text | Rich text formatting: off |
+| `AI Project Summary` | AI text | See [AI Fields](#ai-fields) for the prompt |
+
+#### Meetings table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Title` | Single line text | Primary field |
+| `Date` | Date | Include time: on (Date/time) |
+| `Type` | Single select | Options: `Weekly Sync`, `Status Update`, `Kickoff`, `Retrospective`, `Sprint Review`, `1:1`, `Ad Hoc` |
+| `Project` | Link to another record | Link to: `Projects` table |
+| `Attendees` | Link to another record | Link to: `Team Members` table. Allow linking to multiple records. |
+| `Notes` | Rich text | - |
+| `Agenda` | Rich text | - |
+| `Key Decisions` | Rich text | - |
+| `AI Meeting Summary` | AI text | See [AI Fields](#ai-fields) for the prompt |
+| `Extract Action Items` | Checkbox | Default: unchecked |
+| `Send Follow-up Email` | Checkbox | Default: unchecked |
+
+#### Action Items table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Title` | Single line text | Primary field |
+| `Status` | Single select | Options: `To Do`, `In Progress`, `Done` |
+| `Priority` | Single select | Options: `High`, `Medium`, `Low` |
+| `Due Date` | Date | Include time: off |
+| `Notes` | Long text | Rich text formatting: off |
+| `Meeting` | Link to another record | Link to: `Meetings` table |
+| `Assignee` | Link to another record | Link to: `Team Members` table |
+
+### Step 3: Configure AI Field Prompts
+
+**AI Meeting Summary** (on the Meetings table): Set the source fields to `Notes`, `Agenda`, and `Key Decisions`. Use this prompt:
+
+> Summarize this meeting's notes, agenda, and key decisions into a concise bullet-point summary. Lead with the most important takeaway. Include any action items or next steps mentioned.
+
+**AI Project Summary** (on the Projects table): Set the source fields to `Brief`, `Status`, `Start Date`, `End Date`, and the linked `Meetings` records (rolling up `Notes` and `Key Decisions`). Use this prompt:
+
+> Summarize this project's current status, recent progress, and any blockers or risks. Keep it to 3-5 bullet points.
+
+### Step 4: Configure Automations (optional)
+
+**Extract Action Items automation:**
+1. Trigger: "When a record matches conditions" on `Meetings` table, where `Extract Action Items` = checked
+2. Action: AI action to read `Notes`, `Agenda`, and `Key Decisions` and parse out action items
+3. Action: Create records in `Action Items` table for each extracted item, linking back to the triggering meeting via `Meeting` field
+4. Action: Uncheck `Extract Action Items` on the triggering record
+
+**Send Follow-up Email automation:**
+1. Trigger: "When a record matches conditions" on `Meetings` table, where `Send Follow-up Email` = checked
+2. Action: Send email summarizing the meeting (notes, decisions, action items) to attendees
+3. Action: Uncheck `Send Follow-up Email` on the triggering record
+
+---
+
+## Schema Requirements (Reference)
 
 The extension reads your base schema through the Custom Properties panel. Below are the tables and fields it expects. Fields marked **(auto-detected)** are found automatically by field type - they do not appear in the properties panel.
 

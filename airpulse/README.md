@@ -12,7 +12,81 @@ Attendees submit and upvote questions, hosts manage a live queue with presentati
 4. **Create an event.** Switch the Mode property to "Setup", then click "New Event" to create your first event.
 5. **Go live.** Toggle the event to "Live", switch Mode to "Audience" on the attendee-facing page and "Admin" on the host page.
 
-## Schema Requirements
+## Schema Setup (Agent-Ready)
+
+Use the instructions below to create the full base schema from scratch. Every table name, field name, field type, and relationship is specified exactly. Create tables and fields in the order listed to ensure link fields resolve correctly.
+
+### Step 1: Create Tables
+
+Create these three tables (in this order):
+
+1. `Events`
+2. `Q&A`
+3. `Upvotes`
+
+### Step 2: Create Fields
+
+#### Events table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+| `Date` | Date | Include time: on (Date/time) |
+| `Description` | Long text | Rich text formatting: off |
+| `Primary Color` | Single line text | Example value: `#166ee1`. Hex color code that themes the entire interface. |
+| `Logo` | Attachment | Primary logo image |
+| `Secondary Logo` | Attachment | Light variant logo for dark backgrounds in presentation mode |
+| `Live Event` | Checkbox | Default: unchecked. Only one event should be live at a time. |
+| `Event Type` | Single select | Options: `Live Questions`, `Q/A` |
+
+#### Q&A table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Question Text` | Single line text | Primary field |
+| `Event` | Link to another record | Link to: `Events` table |
+| `Status` | Single select | Options: `Pending`, `Live`, `Answered`, `Archived` (exact names required) |
+| `Created By` | Created by | Automatic, no config needed |
+| `AI Answer` | Long text | Rich text formatting: off. Optional, for AI-generated answer suggestions. |
+| `Human Answer` | Long text | Rich text formatting: off. Optional, for admin-written answers. |
+| `Answered By` | Single line text | Optional, tracks who answered. |
+| `Upvote Count` | Count | Count linked records from `Upvotes` table via the `Question` field |
+
+#### Upvotes table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Question` | Link to another record | Link to: `Q&A` table. Primary field can be auto-generated. |
+| `Created By` | Created by | Automatic, no config needed. Used for deduplication (one vote per user per question). |
+
+### Step 3: Configure the Extension Properties
+
+After creating the schema, map these in the extension's properties panel:
+
+| Property | Value |
+|---|---|
+| Mode | `Audience`, `Admin`, or `Setup` (start with `Setup`) |
+| Events Table | `Events` |
+| Q&A Table | `Q&A` |
+| Upvotes Table | `Upvotes` |
+| Event Link (Q&A -> Events) | `Event` field on Q&A table |
+| Upvote Count | `Upvote Count` field on Q&A table |
+| Question Link (Upvotes -> Q&A) | `Question` field on Upvotes table |
+
+All other fields (`Primary Color`, `Logo`, `Status`, `Question Text`, `Created By`, etc.) are detected automatically by name. No additional mapping needed if you used the exact field names above.
+
+### Step 4: Create a Test Event
+
+1. Set Mode to `Setup` in the properties panel
+2. Click "New Event"
+3. Enter a name, date, and primary color (e.g. `#166ee1`)
+4. Set Event Type to `Live Questions` or `Q/A`
+5. Toggle the event to Live
+6. Switch Mode to `Audience` to test question submission, or `Admin` to manage the queue
+
+---
+
+## Schema Requirements (Reference)
 
 AirPulse requires three tables. Fields are connected in two ways: some are selected in the properties panel (marked **custom property**), while others are looked up automatically by field name (marked **by name**).
 

@@ -37,7 +37,86 @@ A multi-level Gantt chart extension for Airtable Interfaces, built with React. I
 
 ---
 
-## Schema Requirements
+## Schema Setup (Agent-Ready)
+
+Use the instructions below to create the full base schema from scratch. Every table name, field name, field type, and relationship is specified exactly. Create tables and fields in the order listed to ensure link fields resolve correctly.
+
+### Step 1: Create Tables
+
+Create these three tables (in this order):
+
+1. `Projects`
+2. `Tasks`
+3. `Subtasks`
+
+### Step 2: Create Fields
+
+#### Projects table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+| `Tasks` | Link to another record | Link to: `Tasks` table. Allow linking to multiple records. |
+
+#### Tasks table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+| `Subtasks` | Link to another record | Link to: `Subtasks` table. Allow linking to multiple records. |
+
+#### Subtasks table
+
+| Field Name | Field Type | Options / Config |
+|---|---|---|
+| `Name` | Single line text | Primary field |
+| `Start Date` | Date | Include time: off |
+| `End Date` | Date | Include time: off |
+| `Color` | Single select | Options: use any Airtable select colors. The extension reads the color metadata from each option (e.g. `blueDark1`, `greenLight2`). Example options: `Blue`, `Green`, `Red`, `Yellow`, `Purple`, `Gray`. |
+| `Sub-subtasks` | Link to another record | Link to: `Subtasks` table (same table, self-referencing). Allow linking to multiple records. Creates nested hierarchy. |
+| `Predecessors` | Link to another record | Link to: `Subtasks` table (same table, self-referencing, separate field from Sub-subtasks). Allow linking to multiple records. Defines finish-to-start dependencies. |
+
+### Step 3: Create Sample Data (optional)
+
+To verify the setup, create a minimal dataset:
+
+1. Create 1 Project record: `Project Alpha`
+2. Create 2 Task records: `Design Phase`, `Build Phase`
+3. Link both tasks to `Project Alpha` via the `Tasks` field
+4. Create 4 Subtask records:
+   - `Wireframes` (Start: 2025-01-06, End: 2025-01-10, Color: Blue)
+   - `Visual Design` (Start: 2025-01-13, End: 2025-01-17, Color: Blue)
+   - `Frontend Build` (Start: 2025-01-20, End: 2025-01-31, Color: Green)
+   - `Backend Build` (Start: 2025-01-20, End: 2025-02-07, Color: Green)
+5. Link `Wireframes` and `Visual Design` to `Design Phase` via the `Subtasks` field
+6. Link `Frontend Build` and `Backend Build` to `Build Phase` via the `Subtasks` field
+7. Set `Wireframes` as a predecessor of `Visual Design` (link via `Predecessors` field)
+8. Set `Visual Design` as a predecessor of `Frontend Build` and `Backend Build`
+
+### Step 4: Configure the Extension Settings
+
+Map these in the extension's settings panel:
+
+| Setting | Value |
+|---|---|
+| Projects table | `Projects` |
+| Tasks table | `Tasks` |
+| Subtasks table | `Subtasks` |
+| Projects -> Tasks link field | `Tasks` field on Projects table |
+| Tasks -> Subtasks link field | `Subtasks` field on Tasks table |
+| Start date field | `Start Date` field on Subtasks table |
+| End date field | `End Date` field on Subtasks table |
+| Sub-subtask self-link field | `Sub-subtasks` field on Subtasks table |
+| Predecessor field | `Predecessors` field on Subtasks table |
+| Bar color field | `Color` field on Subtasks table |
+
+### Milestones
+
+A subtask whose start date and end date are the same is automatically rendered as a diamond-shaped milestone marker instead of a bar.
+
+---
+
+## Schema Requirements (Reference)
 
 The extension expects a three-level hierarchy of linked tables. You can name them whatever you want -- the extension will try to auto-detect tables whose names include "project", "task", or "subtask", but you can override any selection in settings.
 
