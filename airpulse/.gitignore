@@ -1,0 +1,8 @@
+/node_modules
+/.airtableblocksrc.json
+/build
+temp-*.css
+.block/
+.cursor/
+.windsurf/
+.superpowers/
