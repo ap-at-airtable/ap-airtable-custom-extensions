@@ -271,6 +271,16 @@ AirPulse runs entirely within the Airtable Interface SDK. There are no webhooks,
 - `remark-breaks` ^4.0.0 - Line break handling in Markdown
 - Tailwind CSS 3 (dev dependency, with Airtable design tokens)
 
+## Customization
+
+This extension is a starting point. A few ways to make it your own:
+
+- **Add Q&A statuses.** The `Status` field must include `Pending`, `Live`, `Answered`, and `Archived`, but you can add more options for your own tracking.
+- **Change the branding.** Each event's `Primary Color` themes the entire interface. Set different colors per event for different brands or teams.
+- **Customize AI answers.** The `AI Answer` field is populated by whatever automation you build. Swap in a different model, add retrieval from your docs, or use a scripting action for full control.
+- **Add fields to events.** The extension reads `Description`, `Date`, and logos by name. Add any other fields you want and they'll be accessible through the Airtable record expander.
+- **Modify the source code.** Change layouts, add new question types, adjust the presentation mode styling, or add new admin features.
+
 ## License
 
 Internal use. Not published to the Airtable Marketplace.

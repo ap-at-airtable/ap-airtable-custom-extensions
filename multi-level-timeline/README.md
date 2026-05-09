@@ -342,6 +342,16 @@ Press `?` at any time to see this list inside the extension.
 
 ---
 
+## Customization
+
+This extension is a starting point. A few ways to make it your own:
+
+- **Add sidebar columns.** Map up to four extra fields as sidebar columns for inline editing. Any field type works: text, number, single select, checkbox, linked records, percentages.
+- **Change the color palette.** The `Color` single select field uses Airtable's built-in select colors. Add or rename options to match your team's conventions.
+- **Add more hierarchy levels.** The self-referencing `Sub-subtasks` field supports nesting up to 5 levels deep. Use it for work breakdown structures that go deeper than three levels.
+- **Customize dependency behavior.** The extension supports FS, SS, FF, and SF dependency types for rendering. Modify the auto-scheduling logic in the source to support additional propagation rules beyond finish-to-start.
+- **Modify the source code.** Change bar styles, add new toolbar actions, adjust zoom presets, or add features like resource assignment or progress tracking.
+
 ## License
 
 See [LICENSE.md](LICENSE.md).

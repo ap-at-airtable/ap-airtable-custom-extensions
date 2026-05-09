@@ -25,6 +25,15 @@ npm install
 block run
 ```
 
+## Making It Your Own
+
+These extensions are starting points, not finished products. You're expected to customize them for your workflow. Some ideas:
+
+- **Add or remove fields.** The extensions auto-detect fields by name and type. Rename fields, add new ones, or drop ones you don't need. If a field isn't mapped, the UI section that uses it simply hides.
+- **Change the AI prompts.** The AI text field prompts are suggestions. Rewrite them to match your team's terminology, output format, or level of detail.
+- **Modify the source code.** Every extension is plain React on top of the Airtable SDK. Change colors, layouts, features, or add entirely new views. The code is yours.
+- **Combine with automations.** The extensions work well alongside Airtable Automations, Scripts, and Sync. Layer on whatever workflows make sense for your team.
+
 ## License
 
 MIT

@@ -383,6 +383,16 @@ project/
 
 ---
 
+## Customization
+
+This extension is a starting point. A few ways to make it your own:
+
+- **Add meeting types.** The `Type` single select field drives the type badges. Add whatever options fit your team (e.g. `Design Review`, `All Hands`, `Incident Debrief`).
+- **Rewrite the AI prompts.** The AI text field prompts are suggestions. Change the output format, tone, or focus areas to match how your team works.
+- **Add more fields.** Any new fields you add to the Meetings or Projects tables will be accessible through the Airtable record expander. The extension auto-detects fields by name and type, so naming a new date field with "start" or "end" in the name will pick it up automatically.
+- **Build more automations.** The checkbox-trigger pattern used for Extract Action Items and Send Follow-up works for any automation. Add a new checkbox field, wire up an automation, and map it in the properties panel.
+- **Modify the source code.** The entire app is one file. Change the layout, colors, add new views, or strip out features you don't need.
+
 ## License
 
 MIT
