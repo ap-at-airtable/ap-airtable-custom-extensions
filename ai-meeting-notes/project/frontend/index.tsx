@@ -14,6 +14,8 @@ const INJECTED_CSS = `
 .markdown-body ol ol ol { list-style-type: lower-roman; }
 .markdown-body ul ul { list-style-type: circle; }
 .markdown-body ul ul ul { list-style-type: square; }
+.markdown-body ul.task-list { list-style: none; padding-left: 0.2em; }
+.markdown-body ul.task-list > li > input[type="checkbox"] { margin-right: 0.45em; vertical-align: middle; }
 .markdown-body li { margin-bottom: 0.15em; }
 .markdown-body li > p { margin-bottom: 0.15em; }
 .markdown-body strong { font-weight: 600; }
@@ -67,6 +69,49 @@ if (typeof document !== 'undefined') {
 }
 
 
+// ─── List Rendering (nesting + checkbox aware) ─────────────────
+const renderListBlock = (block: string): string => {
+    type ListItem = {content: string; tag: 'ul' | 'ol'; isTask: boolean; indent: number; children: ListItem[]};
+    const roots: ListItem[] = [];
+    const stack: ListItem[] = [];
+    for (const line of block.split('\n')) {
+        const m = line.match(/^([ \t]*)([-*]|\d+\.|\[[ xX]\])[ \t]+(.*)$/);
+        if (!m) continue;
+        const indent = m[1].replace(/\t/g, '    ').length;
+        // AFM writes checkboxes as "[ ]"/"[x]" with no dash; also unwrap GitHub-style "- [ ]".
+        const ghTask = (m[2] === '-' || m[2] === '*') ? m[3].match(/^(\[[ xX]\])[ \t]+(.*)$/) : null;
+        const marker = ghTask ? ghTask[1] : m[2];
+        const text = ghTask ? ghTask[2] : m[3];
+        const isTask = marker.startsWith('[');
+        const tag: 'ul' | 'ol' = /^\d/.test(marker) ? 'ol' : 'ul';
+        const content = isTask
+            ? `<input type="checkbox"${/[xX]/.test(marker) ? ' checked' : ''}> ${text}`
+            : text;
+        const item: ListItem = {content, tag, isTask, indent, children: []};
+        while (stack.length && stack[stack.length - 1].indent >= indent) stack.pop();
+        (stack.length ? stack[stack.length - 1].children : roots).push(item);
+        stack.push(item);
+    }
+    const render = (items: ListItem[]): string => {
+        let out = '';
+        let i = 0;
+        while (i < items.length) {
+            const {tag, isTask} = items[i];
+            let lis = '';
+            let j = i;
+            while (j < items.length && items[j].tag === tag && items[j].isTask === isTask) {
+                const it = items[j];
+                lis += '<li>' + it.content + (it.children.length ? render(it.children) : '') + '</li>';
+                j++;
+            }
+            out += '<' + tag + (isTask ? ' class="task-list"' : '') + '>' + lis + '</' + tag + '>';
+            i = j;
+        }
+        return out;
+    };
+    return render(roots);
+};
+
 // ─── Inline Markdown Parser (replaces 'marked') ────────────────
 const markdownParse = (md: string): string => {
     const codeBlocks: string[] = [];
@@ -89,16 +134,10 @@ const markdownParse = (md: string): string => {
             return '<a href="' + safeUrl + '">' + text + '</a>';
         })
         .replace(/^---$/gm, '<hr>');
-    // Group lists before \n collapses to <br> — the ^ anchors need real line starts,
-    // otherwise lists after a heading or paragraph render as literal "- " text.
-    html = html.replace(/(?:^[ \t]*[-*]\s.+(?:\n|$))+/gm, (block) => {
-        const items = block.replace(/\n+$/, '').split('\n').map(l => l.replace(/^[ \t]*[-*]\s/, ''));
-        return '<ul>' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
-    });
-    html = html.replace(/(?:^[ \t]*\d+\.\s.+(?:\n|$))+/gm, (block) => {
-        const items = block.replace(/\n+$/, '').split('\n').map(l => l.replace(/^[ \t]*\d+\.\s/, ''));
-        return '<ol>' + items.map(i => '<li>' + i + '</li>').join('') + '</ol>';
-    });
+    // Group consecutive list lines — bullets, numbers, and [ ]/[x] checkboxes — before
+    // \n collapses to <br>; the ^ anchors need real line starts, else a list after a
+    // heading or paragraph renders as literal markers. renderListBlock handles nesting.
+    html = html.replace(/(?:^[ \t]*(?:[-*]|\d+\.|\[[ xX]\])[ \t]+.*(?:\n|$))+/gm, renderListBlock);
     html = html.replace(/\n/g, '<br>');
     html = html.replace(/\x00CB(\d+)\x00/g, (_m, idx) => codeBlocks[parseInt(idx)]);
     return html;
@@ -406,7 +445,10 @@ function nodeToMd(node: Node, listDepth = 0): string {
             return Array.from(el.childNodes).map(c => nodeToMd(c, listDepth + 1)).join('') + (listDepth === 0 ? '\n' : '');
         case 'li': {
             const p = el.parentElement;
-            const indent = '   '.repeat(Math.max(0, listDepth - 1));
+            const indent = '    '.repeat(Math.max(0, listDepth - 1));
+            const checkbox = Array.from(el.children).find(
+                (c) => c.tagName.toLowerCase() === 'input' && (c as HTMLInputElement).type === 'checkbox',
+            ) as HTMLInputElement | undefined;
             let text = '';
             let nested = '';
             for (const child of Array.from(el.childNodes)) {
@@ -416,12 +458,15 @@ function nodeToMd(node: Node, listDepth = 0): string {
                         nested += nodeToMd(child, listDepth);
                         continue;
                     }
+                    if (ct === 'input') continue;
                 }
                 text += nodeToMd(child, listDepth);
             }
-            const marker = p?.tagName.toLowerCase() === 'ol'
-                ? `${Array.from(p.children).indexOf(el) + 1}. `
-                : '- ';
+            const marker = checkbox
+                ? (checkbox.checked ? '[x] ' : '[ ] ')
+                : p?.tagName.toLowerCase() === 'ol'
+                  ? `${Array.from(p.children).indexOf(el) + 1}. `
+                  : '- ';
             return `${indent}${marker}${text.trim()}\n${nested}`;
         }
         case 'blockquote':
