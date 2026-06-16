@@ -88,16 +88,18 @@ const markdownParse = (md: string): string => {
             const safeUrl = url.trim().toLowerCase().startsWith('javascript:') ? '#' : url;
             return '<a href="' + safeUrl + '">' + text + '</a>';
         })
-        .replace(/^---$/gm, '<hr>')
-        .replace(/\n/g, '<br>');
-    html = html.replace(/((?:^[-*]\s.+<br>?)+)/gm, (match) => {
-        const items = match.split('<br>').filter(Boolean).map(l => l.replace(/^[-*]\s/, ''));
+        .replace(/^---$/gm, '<hr>');
+    // Group lists before \n collapses to <br> — the ^ anchors need real line starts,
+    // otherwise lists after a heading or paragraph render as literal "- " text.
+    html = html.replace(/(?:^[ \t]*[-*]\s.+(?:\n|$))+/gm, (block) => {
+        const items = block.replace(/\n+$/, '').split('\n').map(l => l.replace(/^[ \t]*[-*]\s/, ''));
         return '<ul>' + items.map(i => '<li>' + i + '</li>').join('') + '</ul>';
     });
-    html = html.replace(/((?:^\d+\.\s.+<br>?)+)/gm, (match) => {
-        const items = match.split('<br>').filter(Boolean).map(l => l.replace(/^\d+\.\s/, ''));
+    html = html.replace(/(?:^[ \t]*\d+\.\s.+(?:\n|$))+/gm, (block) => {
+        const items = block.replace(/\n+$/, '').split('\n').map(l => l.replace(/^[ \t]*\d+\.\s/, ''));
         return '<ol>' + items.map(i => '<li>' + i + '</li>').join('') + '</ol>';
     });
+    html = html.replace(/\n/g, '<br>');
     html = html.replace(/\x00CB(\d+)\x00/g, (_m, idx) => codeBlocks[parseInt(idx)]);
     return html;
 };
