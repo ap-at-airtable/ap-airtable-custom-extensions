@@ -126,6 +126,8 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         config.removePage(i).then(() => setError(null), onSaveError);
         setSelectedIds([]);
         setDragOverride(null);
+        // Keep the same page active: shift down if we removed one before it, else clamp.
+        setPageIndex((cur) => (i < cur ? cur - 1 : Math.min(cur, config.pages.length - 2)));
     };
 
     const handleAdd = (kind) => {
@@ -412,7 +414,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                             <div
                                 key={i}
                                 className={
-                                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ' +
+                                    'group flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ' +
                                     (active
                                         ? 'bg-blue-blueLight2 text-blue-blueDark1 dark:bg-blue-blueDark1 dark:text-white'
                                         : 'text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700')
@@ -421,13 +423,16 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                 <button type="button" onClick={() => switchPage(i)}>
                                     Page {i + 1}
                                 </button>
-                                {multiPage && active ? (
+                                {multiPage ? (
                                     <button
                                         type="button"
                                         aria-label={`Delete page ${i + 1}`}
                                         title="Delete page"
                                         onClick={() => handleRemovePage(i)}
-                                        className="opacity-70 hover:opacity-100"
+                                        className={
+                                            (active ? 'inline-flex ' : 'hidden group-hover:inline-flex ') +
+                                            'items-center opacity-70 hover:opacity-100'
+                                        }
                                     >
                                         <CloseIcon size={12} />
                                     </button>
