@@ -7,6 +7,7 @@ Custom Airtable Interface Extensions. Each project is a standalone extension you
 | [AI Meeting Notes](./ai-meeting-notes) | AI-powered meeting management — projects, notes, decisions, action items, and AI summaries |
 | [AirPulse](./airpulse) | Real-time audience Q&A built natively in Airtable |
 | [Multi-Level Timeline](./multi-level-timeline) | Three-level Gantt chart with dependency arrows, drag-and-drop scheduling, and critical path |
+| [Page Designer](./page-designer) | Design printable, pixel-perfect pages from your records — invoices, labels, badges, barcodes/QR — with a full-screen slideshow presenter |
 
 ## Getting Started
 
