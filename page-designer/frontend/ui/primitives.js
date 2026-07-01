@@ -125,10 +125,16 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
                     const n = parseFloat(e.target.value);
                     onChange(Number.isNaN(n) ? 0 : clamp(n));
                 }}
-                className={cx(FIELD, suffix && 'pr-7', 'tabular-nums')}
+                className={cx(
+                    FIELD,
+                    suffix && 'pr-7',
+                    'tabular-nums',
+                    // Hide the native number spinners so they don't overlap the suffix.
+                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                )}
             />
             {suffix ? (
-                <span className="pointer-events-none absolute right-2.5 text-xs text-gray-gray500">
+                <span className="pointer-events-none absolute right-2.5 text-xs text-gray-gray500 dark:text-gray-gray400">
                     {suffix}
                 </span>
             ) : null}
@@ -294,7 +300,11 @@ export function Field({label, children, hint}) {
                 </label>
             ) : null}
             {child}
-            {hint ? <div className="text-[11px] leading-snug text-gray-gray500">{hint}</div> : null}
+            {hint ? (
+                <div className="text-[11px] leading-snug text-gray-gray500 dark:text-gray-gray400">
+                    {hint}
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -305,7 +315,7 @@ export function Row({children, className}) {
 
 export function SectionHeader({children}) {
     return (
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500 dark:text-gray-gray400">
             {children}
         </div>
     );
@@ -321,9 +331,9 @@ export function Section({title, defaultOpen = false, children}) {
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between py-2.5 text-left focus:outline-none"
+                className="flex w-full items-center justify-between rounded py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-blueLight1"
             >
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500 dark:text-gray-gray400">
                     {title}
                 </span>
                 <ChevronDown
