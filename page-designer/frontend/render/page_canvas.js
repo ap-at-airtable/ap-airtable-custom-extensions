@@ -70,6 +70,20 @@ export function PageCanvas({
                         if (!visible && !editor) {
                             return null;
                         }
+                        // Cell-value signature: Record objects mutate in place (stable ref),
+                        // so ElementContent's memo would miss a field's value changing —
+                        // including server-recomputed formula/rollup values after an edit.
+                        // Threading the current value busts the memo when it actually changes.
+                        const boundField =
+                            element.fieldId && table ? table.getFieldByIdIfExists(element.fieldId) : null;
+                        let valueKey = null;
+                        if (boundField && record) {
+                            try {
+                                valueKey = record.getCellValueAsString(boundField);
+                            } catch {
+                                valueKey = null;
+                            }
+                        }
                         return (
                             <div
                                 key={element.id}
@@ -87,6 +101,7 @@ export function PageCanvas({
                                             colorOverride={colorOverride}
                                             eagerImages={eagerImages}
                                             interactive={interactive}
+                                            valueKey={valueKey}
                                         />
                                     </ElementBoundary>
                                 </div>

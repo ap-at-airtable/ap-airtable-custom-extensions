@@ -7,8 +7,9 @@ import {useBase, useRecords} from '@airtable/blocks/interface/ui';
 import {extractLinkedRecords} from '../domain/cell_value_helpers.mjs';
 import {columnFractions} from '../domain/layout_model.mjs';
 import {textStyle} from './geometry_style.js';
+import {EditableField} from './editable_field.js';
 
-export function LinkedRecordTable({element, field, record, table}) {
+export function LinkedRecordTable({element, field, record, table, editable}) {
     const base = useBase();
     const linkedTableId = field.config && field.config.options ? field.config.options.linkedTableId : null;
     const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
@@ -74,11 +75,20 @@ export function LinkedRecordTable({element, field, record, table}) {
                             <tr key={`${ref.id}-${rowIndex}`} style={rowStyle(rowIndex)}>
                                 {columns.map((col, colIndex) => (
                                     <td key={col.id} style={cellStyle}>
-                                        {linkedRecord
-                                            ? linkedRecord.getCellValueAsString(col)
-                                            : colIndex === 0
-                                              ? ref.name
-                                              : ''}
+                                        {linkedRecord && editable && linkedTable ? (
+                                            <EditableField
+                                                field={col}
+                                                record={linkedRecord}
+                                                table={linkedTable}
+                                                css={ts}
+                                            />
+                                        ) : linkedRecord ? (
+                                            linkedRecord.getCellValueAsString(col)
+                                        ) : colIndex === 0 ? (
+                                            ref.name
+                                        ) : (
+                                            ''
+                                        )}
                                     </td>
                                 ))}
                             </tr>

@@ -1,7 +1,7 @@
 // Tailwind UI primitives that replace the (unavailable) @airtable/blocks/ui
 // component library. Refined, consistent sizing; dependency-free; dark-mode aware.
 
-import {useId, useState, cloneElement, isValidElement} from 'react';
+import {useId, useState, useEffect, cloneElement, isValidElement} from 'react';
 import {CloseIcon} from './icons.js';
 
 const cx = (...parts) => parts.filter(Boolean).join(' ');
@@ -121,6 +121,19 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
         if (typeof max === 'number') v = Math.min(max, v);
         return v;
     };
+    // Keep a local draft while typing so intermediate keystrokes aren't clamped —
+    // e.g. typing "20" when min is 6 would otherwise snap "2" to 6. Commit (parse +
+    // clamp) on blur/Enter; resync from the prop whenever we're not being edited.
+    const [draft, setDraft] = useState(Number.isFinite(value) ? String(value) : '');
+    const [focused, setFocused] = useState(false);
+    useEffect(() => {
+        if (!focused) setDraft(Number.isFinite(value) ? String(value) : '');
+    }, [value, focused]);
+    const commit = () => {
+        const n = parseFloat(draft);
+        if (!Number.isNaN(n)) onChange(clamp(n));
+        setFocused(false); // resyncs the draft to the committed (clamped) value
+    };
     const stepBy = (dir) => onChange(clamp((Number.isFinite(value) ? value : 0) + dir * step));
     const stepBtn =
         'flex h-[13px] w-4 items-center justify-center text-gray-gray400 hover:text-gray-gray700 dark:hover:text-gray-gray100';
@@ -129,13 +142,18 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
             <input
                 id={id}
                 type="number"
-                value={Number.isFinite(value) ? value : ''}
+                value={draft}
                 min={min}
                 max={max}
                 step={step}
-                onChange={(e) => {
-                    const n = parseFloat(e.target.value);
-                    onChange(Number.isNaN(n) ? 0 : clamp(n));
+                onFocus={() => setFocused(true)}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        commit();
+                        e.currentTarget.blur();
+                    }
                 }}
                 className={cx(
                     FIELD,

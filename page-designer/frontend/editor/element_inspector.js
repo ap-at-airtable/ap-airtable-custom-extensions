@@ -305,7 +305,8 @@ export function ElementInspector({
                             />
                         </>
                     ) : null}
-                    {isEditableField ? (
+                    {isEditableField ||
+                    (isLinkedField && style.linkedRecordDisplay === LinkedRecordDisplay.TABLE) ? (
                         <Toggle
                             label="Allow editing in view"
                             checked={!!style.editable}

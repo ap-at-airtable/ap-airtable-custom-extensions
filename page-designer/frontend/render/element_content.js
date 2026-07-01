@@ -143,7 +143,15 @@ function FieldText({element, css, record, table, interactive}) {
     if (isInlineEditable) {
         body = <EditableField field={field} record={record} table={table} css={css} />;
     } else if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
-        body = <LinkedRecordTable element={element} field={field} record={record} table={table} />;
+        body = (
+            <LinkedRecordTable
+                element={element}
+                field={field}
+                record={record}
+                table={table}
+                editable={!!(interactive && record && element.style.editable)}
+            />
+        );
     } else if (isLinked && linkedMode === LinkedRecordDisplay.LIST) {
         body = <LinkedRecordList css={css} field={field} record={record} />;
     } else if (isSelectPill) {
