@@ -32,6 +32,7 @@ export function PageCanvas({
     scaleMode = 'transform',
     className = '',
     editor = false,
+    eagerImages = false,
 }) {
     const {width, height} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -83,6 +84,7 @@ export function PageCanvas({
                                             record={record}
                                             table={table}
                                             colorOverride={colorOverride}
+                                            eagerImages={eagerImages}
                                         />
                                     </ElementBoundary>
                                 </div>

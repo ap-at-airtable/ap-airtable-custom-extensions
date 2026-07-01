@@ -32,7 +32,7 @@ function resolveAttachmentUrl(record, table, element) {
     return record.getAttachmentClientUrlFromCellValueUrl(image.id, image.url);
 }
 
-export function ImageElement({element, record, table}) {
+export function ImageElement({element, record, table, eager = false}) {
     const isStatic = element.imageSource === ImageSource.STATIC;
     // Track the URL that failed to load so a broken/expired src shows a labeled
     // placeholder instead of silently printing a blank box.
@@ -69,7 +69,9 @@ export function ImageElement({element, record, table}) {
             src={url}
             alt={alt}
             draggable={false}
-            loading="lazy"
+            // Eager in the print layer (it's display:none on screen, so lazy images
+            // there never load and print blank); lazy elsewhere for scroll perf.
+            loading={eager ? 'eager' : 'lazy'}
             decoding="async"
             onError={() => setFailedUrl(url)}
             style={{

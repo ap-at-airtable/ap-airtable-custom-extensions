@@ -17,6 +17,7 @@ export function PrintLayer({page, layout, records, table}) {
                             table={table}
                             scale={PRINT_SCALE}
                             scaleMode="zoom"
+                            eagerImages
                         />
                     </ScaledPage>
                 </div>

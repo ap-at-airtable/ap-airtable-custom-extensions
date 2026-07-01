@@ -211,7 +211,7 @@ function Line({element}) {
 
 // Memoized: layout ops preserve element identity for untouched elements, so a
 // drag/edit only re-renders the element that actually changed (not all of them).
-export const ElementContent = memo(function ElementContent({element, record, table, colorOverride}) {
+export const ElementContent = memo(function ElementContent({element, record, table, colorOverride, eagerImages}) {
     const css = textStyle(colorOverride ? {...element.style, color: colorOverride} : element.style);
     switch (element.kind) {
         case ElementKind.FIELD:
@@ -219,7 +219,7 @@ export const ElementContent = memo(function ElementContent({element, record, tab
         case ElementKind.TEXT:
             return <StaticText element={element} css={css} record={record} table={table} />;
         case ElementKind.IMAGE:
-            return <ImageElement element={element} record={record} table={table} />;
+            return <ImageElement element={element} record={record} table={table} eager={eagerImages} />;
         case ElementKind.BARCODE:
         case ElementKind.QR_CODE:
             return <BarcodeElement element={element} record={record} table={table} />;
