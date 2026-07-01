@@ -197,7 +197,7 @@ export function Segmented({value, options, onChange, className, label, ...rest})
             role="radiogroup"
             aria-label={label}
             className={cx(
-                'inline-flex rounded-lg bg-gray-gray100 p-0.5 dark:bg-gray-gray700',
+                'inline-flex rounded-full bg-gray-gray100 p-0.5 dark:bg-gray-gray700',
                 className,
             )}
         >
@@ -217,7 +217,7 @@ export function Segmented({value, options, onChange, className, label, ...rest})
                         aria-label={opt.label ? undefined : opt.title}
                         onClick={() => onChange(opt.value)}
                         className={cx(
-                            'flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all',
+                            'flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-all',
                             active
                                 ? 'bg-white text-gray-gray700 shadow-xs dark:bg-gray-gray900 dark:text-white'
                                 : 'text-gray-gray500 hover:text-gray-gray700 dark:text-gray-gray400 dark:hover:text-gray-gray200',
