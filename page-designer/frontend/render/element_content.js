@@ -104,7 +104,9 @@ function SelectPills({field, record, css}) {
                             backgroundColor: hex,
                             color: readableTextColor(hex),
                             borderRadius: '999px',
-                            padding: '1px 8px',
+                            // em-based so the breathing room scales with the font; the
+                            // rounded ends need extra horizontal room so text isn't cramped.
+                            padding: '0.3em 0.9em',
                             fontSize: css.fontSize,
                             fontFamily: css.fontFamily,
                             lineHeight: 1.45,

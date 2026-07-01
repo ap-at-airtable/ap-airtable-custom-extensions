@@ -36,7 +36,7 @@ function AddFieldsMenu({fields, onAddFields}) {
         }
         const r = btnRef.current?.getBoundingClientRect();
         if (r) {
-            const width = 240;
+            const width = 288;
             setPos({left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top: r.bottom + 4});
         }
         setSelected(new Set());
@@ -66,7 +66,7 @@ function AddFieldsMenu({fields, onAddFields}) {
                 <>
                     <div className="fixed inset-0 z-40" onClick={close} />
                     <div
-                        className="fixed z-50 w-60 rounded-lg border border-gray-gray200 bg-white p-2 shadow-lg dark:border-gray-gray700 dark:bg-gray-gray800"
+                        className="fixed z-50 w-72 rounded-lg border border-gray-gray200 bg-white p-2 shadow-lg dark:border-gray-gray700 dark:bg-gray-gray800"
                         style={{left: pos.left, top: pos.top}}
                     >
                         <div className="flex items-center justify-between px-1 pb-1">
@@ -85,15 +85,15 @@ function AddFieldsMenu({fields, onAddFields}) {
                             {fields.map((f) => (
                                 <label
                                     key={f.id}
-                                    className="flex cursor-pointer items-center gap-2 rounded px-1 py-1 text-sm text-gray-gray700 hover:bg-gray-gray50 dark:text-gray-gray100 dark:hover:bg-gray-gray700"
+                                    className="flex cursor-pointer items-start gap-2 rounded px-1 py-1 text-sm text-gray-gray700 hover:bg-gray-gray50 dark:text-gray-gray100 dark:hover:bg-gray-gray700"
                                 >
                                     <input
                                         type="checkbox"
                                         checked={selected.has(f.id)}
                                         onChange={() => toggle(f.id)}
-                                        className="h-3.5 w-3.5 shrink-0 accent-blue-blue"
+                                        className="mt-0.5 h-3.5 w-3.5 shrink-0 accent-blue-blue"
                                     />
-                                    <span className="truncate">{f.name}</span>
+                                    <span className="min-w-0 break-words">{f.name}</span>
                                 </label>
                             ))}
                         </div>
