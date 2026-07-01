@@ -210,7 +210,11 @@ export function Segmented({value, options, onChange, className, label, ...rest})
                         type="button"
                         role="radio"
                         aria-checked={active}
-                        title={opt.title || opt.label}
+                        // Icon-only options need a title/aria-label for their name; a
+                        // labeled option already shows its text, so a title there just
+                        // pops a redundant native tooltip echoing the visible label.
+                        title={opt.label ? undefined : opt.title}
+                        aria-label={opt.label ? undefined : opt.title}
                         onClick={() => onChange(opt.value)}
                         className={cx(
                             'flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all',
