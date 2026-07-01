@@ -68,7 +68,7 @@ function Designer({base}) {
     return (
         <ViewMode
             page={config.page}
-            layout={config.layout}
+            pages={config.pages}
             records={records}
             table={table}
             title={title}

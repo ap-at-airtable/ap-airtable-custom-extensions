@@ -124,6 +124,23 @@ export function sendBackward(layout, id) {
     return idx <= 0 ? layout : reorder(layout, id, idx - 1);
 }
 
+// Read-time normalizer + v1→v2 migration for the pages array. v2 stores
+// `pages: [{backgroundColor, layout}]`; v1 stored a single `layout` + a page-level
+// background, which becomes a one-entry array. Always returns at least one page.
+export function hydratePages(rawPages, legacyLayout, legacyBackground) {
+    const toEntry = (bg, layout) => ({
+        backgroundColor: typeof bg === 'string' ? bg : '#ffffff',
+        layout: hydrateLayout(layout),
+    });
+    if (Array.isArray(rawPages) && rawPages.length > 0) {
+        const entries = rawPages
+            .filter((p) => p && typeof p === 'object')
+            .map((p) => toEntry(p.backgroundColor, p.layout));
+        return entries.length > 0 ? entries : [toEntry(undefined, null)];
+    }
+    return [toEntry(legacyBackground, legacyLayout)];
+}
+
 // Non-overlapping positions for `count` equal-size boxes: packed top-to-bottom
 // from the top-left margin, wrapping into the next column when a column is full.
 // Used when adding several elements at once so they never stack on top of each

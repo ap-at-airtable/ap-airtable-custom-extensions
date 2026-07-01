@@ -17,6 +17,7 @@ import {
     snapElement,
     pruneDeletedFieldElements,
     hydrateLayout,
+    hydratePages,
 } from './layout_model.mjs';
 import {defaultLayout} from './config_keys.mjs';
 
@@ -114,6 +115,34 @@ test('clampGroupDelta keeps an in-bounds selection on the page', () => {
     assert.deepEqual(clampGroupDelta(-200, 0, starts, 100, 100), {sdx: -10, sdy: 0});
     // A modest in-range move passes through untouched.
     assert.deepEqual(clampGroupDelta(5, 5, starts, 100, 100), {sdx: 5, sdy: 5});
+});
+
+test('hydratePages normalizes a v2 pages array', () => {
+    const raw = [
+        {backgroundColor: '#eee', layout: {order: ['a'], elementsById: {a: {id: 'a', kind: ElementKind.TEXT, x: 0, y: 0}}}},
+        {layout: {order: [], elementsById: {}}},
+    ];
+    const pages = hydratePages(raw, null, null);
+    assert.equal(pages.length, 2);
+    assert.equal(pages[0].backgroundColor, '#eee');
+    assert.equal(pages[0].layout.elementsById.a.style.color, '#1d1f25'); // hydrated
+    assert.equal(pages[1].backgroundColor, '#ffffff'); // defaulted
+});
+
+test('hydratePages migrates a v1 doc (single layout + page background)', () => {
+    const legacyLayout = {order: ['a'], elementsById: {a: {id: 'a', kind: ElementKind.FIELD, x: 5, y: 6}}};
+    const pages = hydratePages(undefined, legacyLayout, '#abcdef');
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].backgroundColor, '#abcdef');
+    assert.equal(pages[0].layout.order[0], 'a');
+    assert.equal(pages[0].layout.elementsById.a.x, 5);
+});
+
+test('hydratePages always returns at least one page', () => {
+    const pages = hydratePages(undefined, null, undefined);
+    assert.equal(pages.length, 1);
+    assert.deepEqual(pages[0].layout, {order: [], elementsById: {}});
+    assert.equal(pages[0].backgroundColor, '#ffffff');
 });
 
 test('arrangeGrid packs boxes top-to-bottom then wraps columns, no overlap', () => {

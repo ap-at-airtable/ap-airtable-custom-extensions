@@ -1,7 +1,7 @@
-// Editor (edit-mode) orchestrator: palette + interactive canvas + right-hand
-// inspector / page-settings tabs. config.layout (GlobalConfig, optimistic) is the
-// source of truth; an in-flight drag renders from a local override and commits on
-// release. Discrete edits (add/delete/inspector/z-order) persist immediately.
+// Editor (edit-mode) orchestrator: page tabs + palette + interactive canvas +
+// right-hand inspector / page-settings. The document is config.pages (one entry per
+// page); the editor edits the active page. GlobalConfig (optimistic) is the source
+// of truth; an in-flight drag renders from a local override and commits on release.
 
 import {useEffect, useState} from 'react';
 import {EditorCanvas} from './editor_canvas.js';
@@ -35,6 +35,7 @@ import {
     GridIcon,
     UndoIcon,
     RedoIcon,
+    PlusIcon,
 } from '../ui/icons.js';
 import {ZoomControl} from '../ui/zoom_control.js';
 import {usePrintMode} from '../view/use_print_mode.js';
@@ -44,74 +45,89 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const [dragOverride, setDragOverride] = useState(null);
     const [rightTab, setRightTab] = useState('page');
     const [error, setError] = useState(null);
-    // On narrow viewports the inspector is a slide-in drawer toggled by this flag;
-    // on wide viewports (md+) it's always a static side column (flag ignored).
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const [zoom, setZoom] = useState(null);
+    const [pageIndex, setPageIndex] = useState(0);
     const [centerRef, centerWidth] = useContainerWidth();
 
     const {printing, printNow} = usePrintMode(config.page);
 
-    const layout = dragOverride || config.layout;
+    // Keep the active page index in range as pages are added/removed.
+    useEffect(() => {
+        setPageIndex((i) => Math.min(Math.max(i, 0), config.pages.length - 1));
+    }, [config.pages.length]);
+
+    const activeIndex = Math.min(Math.max(pageIndex, 0), config.pages.length - 1);
+    const pageEntry = config.pages[activeIndex];
+    // Effective page for the active page = shared geometry + this page's background.
+    const effectivePage = {...config.page, backgroundColor: pageEntry.backgroundColor};
+    const currentLayout = pageEntry.layout;
+
+    const layout = dragOverride || currentLayout;
     const record = records[0] || null;
-    // Read from the rendered layout so the inspector tracks an in-flight drag.
     const selected = selectedIds.length === 1 ? layout.elementsById[selectedIds[0]] : null;
 
     const {width: pageW, height: pageH} = resolvePageSizePx(config.page);
-    // Floor at 0.1: a pane narrower than the 48px padding would otherwise yield a
-    // zero/negative scale, and gestures divide by it (dx/scale) → NaN/Infinity
-    // geometry that gets persisted. Never let scale reach 0.
     const fitScale = centerWidth > 0 ? Math.max(0.1, Math.min(1, (centerWidth - 48) / pageW)) : 0.5;
-    // null zoom = auto fit-to-width; a number is an explicit user zoom.
     const scale = zoom != null ? zoom : fitScale;
     const applyZoom = (next) => setZoom(Math.max(0.25, Math.min(3, next)));
 
-    // Hold the rendered layout on the local override until GlobalConfig's optimistic
-    // update lands, so a committed drag never flashes back to its pre-commit state.
     const TOO_LARGE = 'This design is too large to save. Remove some elements or images.';
     const isTooLarge = (err) => err && (err.message === 'DOC_TOO_LARGE' || err.message === 'LAYOUT_TOO_LARGE');
+    const onSaveError = (err) => {
+        if (isTooLarge(err)) {
+            setError(TOO_LARGE);
+        } else {
+            console.error('Failed to save', err);
+            setError("Couldn't save your changes. Please try again.");
+        }
+    };
 
     const persist = (nextLayout) => {
         setDragOverride(nextLayout);
-        config.setLayout(nextLayout).then(
-            () => {
-                setDragOverride(null);
-                setError(null);
-            },
-            (err) => {
-                setDragOverride(null);
-                if (isTooLarge(err)) {
-                    setError(TOO_LARGE);
-                } else {
-                    // Permission loss / host write failure is NOT a size problem;
-                    // don't tell the user to delete work that was fine.
-                    console.error('Failed to save layout', err);
-                    setError("Couldn't save your changes. Please try again.");
-                }
-            },
-        );
+        config.setLayout(activeIndex, nextLayout).then(() => {
+            setDragOverride(null);
+            setError(null);
+        }, (err) => {
+            setDragOverride(null);
+            onSaveError(err);
+        });
     };
 
+    // Page-settings panel emits single-key patches: background is per-page, the rest
+    // (size/orientation) is shared geometry.
     const persistPage = (patch) => {
-        config.setPage({...config.page, ...patch}).then(
-            () => setError(null),
-            (err) => {
-                if (isTooLarge(err)) {
-                    setError(TOO_LARGE);
-                } else {
-                    console.error('Failed to save page settings', err);
-                    setError("Couldn't save the page settings. Please try again.");
-                }
-            },
-        );
+        const write =
+            'backgroundColor' in patch
+                ? config.setBackground(activeIndex, patch.backgroundColor)
+                : config.setPageGeometry({...config.page, ...patch});
+        write.then(() => setError(null), onSaveError);
+    };
+
+    const switchPage = (i) => {
+        setDragOverride(null);
+        setSelectedIds([]);
+        setRightTab('page');
+        setPageIndex(i);
+    };
+    const handleAddPage = () => {
+        const target = config.pages.length; // new page's index after append
+        config.addPage().then(() => {
+            setError(null);
+            switchPage(target);
+        }, onSaveError);
+    };
+    const handleRemovePage = (i) => {
+        config.removePage(i).then(() => setError(null), onSaveError);
+        setSelectedIds([]);
+        setDragOverride(null);
     };
 
     const handleAdd = (kind) => {
-        const {width: pw, height: ph} = resolvePageSizePx(config.page);
         const size = defaultSizeForKind(kind);
-        const x = snapToGrid(Math.max(0, (pw - size.width) / 2));
-        const y = snapToGrid(Math.max(0, (ph - size.height) / 3));
-        const {layout: next, element} = addNewElement(config.layout, {kind, x, y});
+        const x = snapToGrid(Math.max(0, (pageW - size.width) / 2));
+        const y = snapToGrid(Math.max(0, (pageH - size.height) / 3));
+        const {layout: next, element} = addNewElement(currentLayout, {kind, x, y});
         persist(next);
         setSelectedIds([element.id]);
         setRightTab('element');
@@ -122,23 +138,20 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     // don't stack. Labels are shown so a freshly-populated page stays readable.
     const handleAddFields = (fieldIds) => {
         if (!fieldIds.length) return;
-        const {width: pw, height: ph} = resolvePageSizePx(config.page);
         const size = defaultSizeForKind(ElementKind.FIELD);
         const margin = PAGE_GRID_SIZE * 2;
-        // Start below existing content so the new fields don't cover it; fall back to
-        // the top margin if there's no room left below.
-        const existing = getOrderedElements(config.layout);
+        const existing = getOrderedElements(currentLayout);
         const bottom = existing.reduce((m, el) => Math.max(m, el.y + el.height), 0);
         let startY = existing.length ? snapToGrid(bottom + PAGE_GRID_SIZE) : margin;
-        if (startY + size.height > ph - margin) startY = margin;
+        if (startY + size.height > pageH - margin) startY = margin;
         const positions = arrangeGrid(fieldIds.length, {
-            pageWidth: pw,
-            pageHeight: ph,
+            pageWidth: pageW,
+            pageHeight: pageH,
             itemWidth: size.width,
             itemHeight: size.height,
             startY,
         });
-        let next = config.layout;
+        let next = currentLayout;
         const newIds = [];
         fieldIds.forEach((fieldId, i) => {
             const {layout: withEl, element} = addNewElement(next, {
@@ -160,7 +173,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         setSelectedIds(ids);
         if (ids.length) {
             setRightTab('element');
-            setInspectorOpen(true); // reveal the drawer on narrow viewports
+            setInspectorOpen(true);
         }
     };
     const handleToggle = (id) => {
@@ -171,23 +184,18 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
 
     const GEOMETRY_KEYS = ['x', 'y', 'width', 'height'];
     const updateSelected = (patch) => {
-        if (selectedIds.length !== 1) {
-            return;
-        }
+        if (selectedIds.length !== 1) return;
         const id = selectedIds[0];
-        let next = updateElement(config.layout, id, patch);
-        // Inspector number inputs can type geometry out of bounds; keep it on-page.
+        let next = updateElement(currentLayout, id, patch);
         if (GEOMETRY_KEYS.some((k) => k in patch)) {
             const el = next.elementsById[id];
-            if (el) {
-                next = updateElement(next, id, clampElementToPage(el, pageW, pageH));
-            }
+            if (el) next = updateElement(next, id, clampElementToPage(el, pageW, pageH));
         }
         persist(next);
     };
     const deleteSelected = () => {
         if (!selectedIds.length) return;
-        let next = config.layout;
+        let next = currentLayout;
         for (const id of selectedIds) next = removeElement(next, id);
         persist(next);
         setSelectedIds([]);
@@ -195,7 +203,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     };
     const duplicateSelected = () => {
         if (!selectedIds.length) return;
-        let next = config.layout;
+        let next = currentLayout;
         const newIds = [];
         for (const id of selectedIds) {
             const {layout: n, element} = duplicateElement(next, id);
@@ -205,41 +213,35 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         persist(next);
         setSelectedIds(newIds);
     };
-    // Z-order + align/distribute act on every selected element.
     const bringSelectedToFront = () => {
-        let next = config.layout;
+        let next = currentLayout;
         for (const id of selectedIds) next = bringToFront(next, id);
         persist(next);
     };
     const sendSelectedToBack = () => {
-        let next = config.layout;
+        let next = currentLayout;
         for (const id of selectedIds) next = sendToBack(next, id);
         persist(next);
     };
     const applyAlign = (mode) => {
-        const els = selectedIds.map((id) => config.layout.elementsById[id]).filter(Boolean);
+        const els = selectedIds.map((id) => currentLayout.elementsById[id]).filter(Boolean);
         const patches = alignElements(els, mode);
-        if (Object.keys(patches).length) persist(updateElements(config.layout, patches));
+        if (Object.keys(patches).length) persist(updateElements(currentLayout, patches));
     };
     const applyDistribute = (axis) => {
-        const els = selectedIds.map((id) => config.layout.elementsById[id]).filter(Boolean);
+        const els = selectedIds.map((id) => currentLayout.elementsById[id]).filter(Boolean);
         const patches = distributeElements(els, axis);
-        if (Object.keys(patches).length) persist(updateElements(config.layout, patches));
+        if (Object.keys(patches).length) persist(updateElements(currentLayout, patches));
     };
 
-    // Drop selected ids whose element no longer exists (e.g. after an undo that
-    // removed an added element, or a delete by another collaborator), so the
-    // inspector never points at a missing element.
+    // Drop selected ids whose element no longer exists on the active page.
     useEffect(() => {
         setSelectedIds((prev) => {
-            const valid = prev.filter((id) => config.layout.elementsById[id]);
+            const valid = prev.filter((id) => currentLayout.elementsById[id]);
             return valid.length === prev.length ? prev : valid;
         });
-    }, [config.layout]);
+    }, [currentLayout]);
 
-    // Keyboard shortcuts (edit mode): undo/redo, delete/duplicate/z-order/deselect
-    // + arrow nudge. Skipped while a form control or rich-text field has focus so
-    // typing in the inspector never mutates the selected element.
     useEffect(() => {
         const onKeyDown = (e) => {
             const tag = e.target && e.target.tagName;
@@ -251,16 +253,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             ) {
                 return;
             }
-            // Escape closes the drawer (narrow viewports) and deselects, so keyboard
-            // users are never trapped in the overlay — handle before the selection guard.
             if (e.key === 'Escape') {
                 setInspectorOpen(false);
                 setSelectedIds([]);
                 return;
             }
             const mod = e.metaKey || e.ctrlKey;
-            // Undo/redo work with or without a selection, so handle before the guard.
-            // Cmd/Ctrl+Z = undo, Cmd/Ctrl+Shift+Z or Cmd/Ctrl+Y = redo.
             if (mod && (e.key === 'z' || e.key === 'Z')) {
                 e.preventDefault();
                 setDragOverride(null);
@@ -274,9 +272,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                 config.redo();
                 return;
             }
-            if (!selectedIds.length) {
-                return;
-            }
+            if (!selectedIds.length) return;
             if (mod && (e.key === 'd' || e.key === 'D')) {
                 e.preventDefault();
                 duplicateSelected();
@@ -296,215 +292,250 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                 const dy = e.key === 'ArrowUp' ? -step : e.key === 'ArrowDown' ? step : 0;
                 const patches = {};
                 for (const id of selectedIds) {
-                    const el = config.layout.elementsById[id];
+                    const el = currentLayout.elementsById[id];
                     if (!el) continue;
                     const moved = clampElementToPage({...el, x: el.x + dx, y: el.y + dy}, pageW, pageH);
                     patches[id] = {x: moved.x, y: moved.y};
                 }
-                persist(updateElements(config.layout, patches));
+                persist(updateElements(currentLayout, patches));
             }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
         // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [selectedIds, config.layout, config.page, config.undo, config.redo]);
+    }, [selectedIds, currentLayout, config.page, config.undo, config.redo, activeIndex]);
+
+    const multiPage = config.pages.length > 1;
 
     return (
         <>
             <div className="pd-screen-only flex h-full flex-col">
-            <div className="flex items-center gap-2 border-b border-gray-gray200 bg-white px-3 py-2 dark:border-gray-gray700 dark:bg-gray-gray800">
-                <div className="min-w-0 flex-1 overflow-x-auto">
-                    <ElementPalette
-                        onAdd={handleAdd}
-                        fields={table.fields.map((f) => ({id: f.id, name: f.name}))}
-                        onAddFields={handleAddFields}
-                    />
-                </div>
-                <div className="flex shrink-0 items-center gap-2">
-                    <span className="hidden text-xs text-gray-gray500 lg:inline">
-                        {records.length} {records.length === 1 ? 'record' : 'records'}
-                    </span>
-                    <IconButton
-                        icon={UndoIcon}
-                        label="Undo (⌘Z)"
-                        disabled={!config.canUndo}
-                        onClick={() => config.undo()}
-                    />
-                    <IconButton
-                        icon={RedoIcon}
-                        label="Redo (⌘⇧Z)"
-                        disabled={!config.canRedo}
-                        onClick={() => config.redo()}
-                    />
-                    <IconButton
-                        icon={GridIcon}
-                        label="Toggle grid"
-                        active={showGrid}
-                        onClick={onToggleGrid}
-                    />
-                    {onPreview ? (
+                <div className="flex items-center gap-2 border-b border-gray-gray200 bg-white px-3 py-2 dark:border-gray-gray700 dark:bg-gray-gray800">
+                    <div className="min-w-0 flex-1 overflow-x-auto">
+                        <ElementPalette
+                            onAdd={handleAdd}
+                            fields={table.fields.map((f) => ({id: f.id, name: f.name}))}
+                            onAddFields={handleAddFields}
+                        />
+                    </div>
+                    <div className="flex shrink-0 items-center gap-2">
+                        <span className="hidden text-xs text-gray-gray500 lg:inline">
+                            {records.length} {records.length === 1 ? 'record' : 'records'}
+                        </span>
+                        <IconButton
+                            icon={UndoIcon}
+                            label="Undo (⌘Z)"
+                            disabled={!config.canUndo}
+                            onClick={() => config.undo()}
+                        />
+                        <IconButton
+                            icon={RedoIcon}
+                            label="Redo (⌘⇧Z)"
+                            disabled={!config.canRedo}
+                            onClick={() => config.redo()}
+                        />
+                        <IconButton
+                            icon={GridIcon}
+                            label="Toggle grid"
+                            active={showGrid}
+                            onClick={onToggleGrid}
+                        />
+                        {onPreview ? (
+                            <Button
+                                variant="default"
+                                size="sm"
+                                icon={EyeIcon}
+                                onClick={onPreview}
+                                title="Preview the published view"
+                            >
+                                Preview
+                            </Button>
+                        ) : null}
                         <Button
-                            variant="default"
+                            variant="primary"
                             size="sm"
-                            icon={EyeIcon}
-                            onClick={onPreview}
-                            title="Preview the published view"
+                            icon={PrinterIcon}
+                            onClick={printNow}
+                            title="For exact sizing, set Margins to None and Scale to 100% in the print dialog."
                         >
-                            Preview
+                            Print
                         </Button>
-                    ) : null}
-                    <Button
-                        variant="primary"
-                        size="sm"
-                        icon={PrinterIcon}
-                        onClick={printNow}
-                        title="For exact sizing, set Margins to None and Scale to 100% in the print dialog."
-                    >
-                        Print
-                    </Button>
-                    <IconButton
-                        icon={SettingsIcon}
-                        label="Toggle settings panel"
-                        onClick={() => setInspectorOpen((o) => !o)}
-                        className="md:hidden"
-                    />
+                        <IconButton
+                            icon={SettingsIcon}
+                            label="Toggle settings panel"
+                            onClick={() => setInspectorOpen((o) => !o)}
+                            className="md:hidden"
+                        />
+                    </div>
                 </div>
-            </div>
 
-            {error ? (
-                <div className="pd-screen-only flex items-center gap-2 bg-red-redLight2 px-3 py-1.5 text-xs text-red-redDark1">
-                    <WarningIcon size={14} />
-                    <span className="flex-1">{error}</span>
-                    <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
-                        <CloseIcon size={14} />
+                {/* Page tabs: each record renders every page in order. */}
+                <div className="pd-screen-only flex items-center gap-1 overflow-x-auto border-b border-gray-gray200 bg-gray-gray25 px-3 py-1 dark:border-gray-gray700 dark:bg-gray-gray800">
+                    {config.pages.map((_, i) => {
+                        const active = i === activeIndex;
+                        return (
+                            <div
+                                key={i}
+                                className={
+                                    'flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ' +
+                                    (active
+                                        ? 'bg-blue-blueLight2 text-blue-blueDark1 dark:bg-blue-blueDark1 dark:text-white'
+                                        : 'text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700')
+                                }
+                            >
+                                <button type="button" onClick={() => switchPage(i)}>
+                                    Page {i + 1}
+                                </button>
+                                {multiPage && active ? (
+                                    <button
+                                        type="button"
+                                        aria-label={`Delete page ${i + 1}`}
+                                        title="Delete page"
+                                        onClick={() => handleRemovePage(i)}
+                                        className="opacity-70 hover:opacity-100"
+                                    >
+                                        <CloseIcon size={12} />
+                                    </button>
+                                ) : null}
+                            </div>
+                        );
+                    })}
+                    <button
+                        type="button"
+                        onClick={handleAddPage}
+                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-gray500 hover:bg-gray-gray100 hover:text-gray-gray700 dark:hover:bg-gray-gray700"
+                    >
+                        <PlusIcon size={12} />
+                        Add page
                     </button>
                 </div>
-            ) : null}
 
-            {!record ? (
-                <div className="pd-screen-only bg-blue-blueLight3 px-3 py-1.5 text-xs text-blue-blueDark1">
-                    Previewing with placeholders. Bound field values appear once the source has
-                    records.
-                </div>
-            ) : null}
-
-            <div className="relative flex min-h-0 flex-1">
-                <div className="relative flex min-w-0 flex-1 flex-col">
-                    <div
-                        ref={centerRef}
-                        // min-w-0 lets this pane shrink below the page's intrinsic width so the
-                        // measured width is the real available space (correct fit-scale) and the
-                        // inspector panel is never pushed off-screen.
-                        className="pd-desk min-w-0 flex-1 overflow-auto"
-                    >
-                        {/* w-max + min-w-full: center the page when it fits, and grow the
-                            row so an oversized (zoomed-in) page is fully scrollable. */}
-                        <div className="flex min-h-full w-max min-w-full items-start justify-center p-6">
-                            <EditorCanvas
-                                page={config.page}
-                                layout={layout}
-                                record={record}
-                                table={table}
-                                selectedIds={selectedIds}
-                                scale={scale}
-                                showGrid={showGrid}
-                                onSelect={handleSelect}
-                                onToggle={handleToggle}
-                                onPreview={(patches) =>
-                                    setDragOverride(updateElements(config.layout, patches))
-                                }
-                                onCommit={(patches) => persist(updateElements(config.layout, patches))}
-                            />
-                        </div>
+                {error ? (
+                    <div className="pd-screen-only flex items-center gap-2 bg-red-redLight2 px-3 py-1.5 text-xs text-red-redDark1">
+                        <WarningIcon size={14} />
+                        <span className="flex-1">{error}</span>
+                        <button type="button" onClick={() => setError(null)} aria-label="Dismiss">
+                            <CloseIcon size={14} />
+                        </button>
                     </div>
-                    <ZoomControl
-                        scale={scale}
-                        isFit={zoom == null}
-                        onOut={() => applyZoom(scale - 0.1)}
-                        onIn={() => applyZoom(scale + 0.1)}
-                        onReset={() => setZoom(null)}
-                    />
-                </div>
-
-                {inspectorOpen ? (
-                    <div
-                        className="absolute inset-0 z-10 bg-black/40 md:hidden"
-                        onClick={() => setInspectorOpen(false)}
-                    />
                 ) : null}
 
-                <div
-                    className={
-                        'absolute right-0 top-0 z-20 flex h-full w-72 max-w-[85%] flex-col border-l border-gray-gray200 bg-white shadow-xl transition-transform ' +
-                        'md:static md:z-auto md:max-w-none md:shrink-0 md:shadow-none ' +
-                        'dark:border-gray-gray700 dark:bg-gray-gray800 ' +
-                        (inspectorOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0')
-                    }
-                >
-                    <div className="flex items-center border-b border-gray-gray200 text-xs font-medium dark:border-gray-gray700">
-                        <button
-                            type="button"
-                            onClick={() => setRightTab('page')}
-                            className={`flex-1 px-3 py-2 ${
-                                rightTab === 'page'
-                                    ? 'border-b-2 border-blue-blue text-blue-blue'
-                                    : 'text-gray-gray500'
-                            }`}
-                        >
-                            Page
-                        </button>
-                        <button
-                            type="button"
-                            disabled={selectedIds.length === 0}
-                            onClick={() => setRightTab('element')}
-                            className={`flex-1 px-3 py-2 disabled:opacity-40 ${
-                                rightTab === 'element'
-                                    ? 'border-b-2 border-blue-blue text-blue-blue'
-                                    : 'text-gray-gray500'
-                            }`}
-                        >
-                            Element
-                        </button>
-                        <button
-                            type="button"
-                            aria-label="Close panel"
-                            onClick={() => setInspectorOpen(false)}
-                            className="shrink-0 px-2 text-gray-gray400 hover:text-gray-gray600 md:hidden"
-                        >
-                            <CloseIcon size={16} />
-                        </button>
+                {!record ? (
+                    <div className="pd-screen-only bg-blue-blueLight3 px-3 py-1.5 text-xs text-blue-blueDark1">
+                        Previewing with placeholders. Bound field values appear once the source has
+                        records.
                     </div>
-                    <div className="min-h-0 flex-1 overflow-auto">
-                        {rightTab === 'element' && selected ? (
-                            <ElementInspector
-                                element={selected}
-                                table={table}
-                                onChange={updateSelected}
-                                onDelete={deleteSelected}
-                                onDuplicate={duplicateSelected}
-                                onBringToFront={bringSelectedToFront}
-                                onSendToBack={sendSelectedToBack}
-                            />
-                        ) : rightTab === 'element' && selectedIds.length > 1 ? (
-                            <MultiInspector
-                                count={selectedIds.length}
-                                onAlign={applyAlign}
-                                onDistribute={applyDistribute}
-                                onDuplicate={duplicateSelected}
-                                onDelete={deleteSelected}
-                                onBringToFront={bringSelectedToFront}
-                                onSendToBack={sendSelectedToBack}
-                            />
-                        ) : (
-                            <PageSettingsPanel page={config.page} onChangePage={persistPage} />
-                        )}
+                ) : null}
+
+                <div className="relative flex min-h-0 flex-1">
+                    <div className="relative flex min-w-0 flex-1 flex-col">
+                        <div ref={centerRef} className="pd-desk min-w-0 flex-1 overflow-auto">
+                            <div className="flex min-h-full w-max min-w-full items-start justify-center p-6">
+                                <EditorCanvas
+                                    page={effectivePage}
+                                    layout={layout}
+                                    record={record}
+                                    table={table}
+                                    selectedIds={selectedIds}
+                                    scale={scale}
+                                    showGrid={showGrid}
+                                    onSelect={handleSelect}
+                                    onToggle={handleToggle}
+                                    onPreview={(patches) =>
+                                        setDragOverride(updateElements(currentLayout, patches))
+                                    }
+                                    onCommit={(patches) => persist(updateElements(currentLayout, patches))}
+                                />
+                            </div>
+                        </div>
+                        <ZoomControl
+                            scale={scale}
+                            isFit={zoom == null}
+                            onOut={() => applyZoom(scale - 0.1)}
+                            onIn={() => applyZoom(scale + 0.1)}
+                            onReset={() => setZoom(null)}
+                        />
+                    </div>
+
+                    {inspectorOpen ? (
+                        <div
+                            className="absolute inset-0 z-10 bg-black/40 md:hidden"
+                            onClick={() => setInspectorOpen(false)}
+                        />
+                    ) : null}
+
+                    <div
+                        className={
+                            'absolute right-0 top-0 z-20 flex h-full w-72 max-w-[85%] flex-col border-l border-gray-gray200 bg-white shadow-xl transition-transform ' +
+                            'md:static md:z-auto md:max-w-none md:shrink-0 md:shadow-none ' +
+                            'dark:border-gray-gray700 dark:bg-gray-gray800 ' +
+                            (inspectorOpen ? 'translate-x-0' : 'translate-x-full md:translate-x-0')
+                        }
+                    >
+                        <div className="flex items-center border-b border-gray-gray200 text-xs font-medium dark:border-gray-gray700">
+                            <button
+                                type="button"
+                                onClick={() => setRightTab('page')}
+                                className={`flex-1 px-3 py-2 ${
+                                    rightTab === 'page'
+                                        ? 'border-b-2 border-blue-blue text-blue-blue'
+                                        : 'text-gray-gray500'
+                                }`}
+                            >
+                                Page
+                            </button>
+                            <button
+                                type="button"
+                                disabled={selectedIds.length === 0}
+                                onClick={() => setRightTab('element')}
+                                className={`flex-1 px-3 py-2 disabled:opacity-40 ${
+                                    rightTab === 'element'
+                                        ? 'border-b-2 border-blue-blue text-blue-blue'
+                                        : 'text-gray-gray500'
+                                }`}
+                            >
+                                Element
+                            </button>
+                            <button
+                                type="button"
+                                aria-label="Close panel"
+                                onClick={() => setInspectorOpen(false)}
+                                className="shrink-0 px-2 text-gray-gray400 hover:text-gray-gray600 md:hidden"
+                            >
+                                <CloseIcon size={16} />
+                            </button>
+                        </div>
+                        <div className="min-h-0 flex-1 overflow-auto">
+                            {rightTab === 'element' && selected ? (
+                                <ElementInspector
+                                    element={selected}
+                                    table={table}
+                                    onChange={updateSelected}
+                                    onDelete={deleteSelected}
+                                    onDuplicate={duplicateSelected}
+                                    onBringToFront={bringSelectedToFront}
+                                    onSendToBack={sendSelectedToBack}
+                                />
+                            ) : rightTab === 'element' && selectedIds.length > 1 ? (
+                                <MultiInspector
+                                    count={selectedIds.length}
+                                    onAlign={applyAlign}
+                                    onDistribute={applyDistribute}
+                                    onDuplicate={duplicateSelected}
+                                    onDelete={deleteSelected}
+                                    onBringToFront={bringSelectedToFront}
+                                    onSendToBack={sendSelectedToBack}
+                                />
+                            ) : (
+                                <PageSettingsPanel page={effectivePage} onChangePage={persistPage} />
+                            )}
+                        </div>
                     </div>
                 </div>
-            </div>
             </div>
 
             {printing ? (
-                <PrintLayer page={config.page} layout={config.layout} records={records} table={table} />
+                <PrintLayer page={config.page} pages={config.pages} records={records} table={table} />
             ) : null}
         </>
     );
