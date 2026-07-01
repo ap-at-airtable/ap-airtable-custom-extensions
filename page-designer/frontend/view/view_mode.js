@@ -192,30 +192,12 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                         />
                     ) : null}
                     {!continuous && records.length > 1 ? (
-                        <div className="flex items-center gap-1">
-                            <Button
-                                variant="default"
-                                size="sm"
-                                icon={ChevronLeft}
-                                aria-label="Previous record"
-                                disabled={safeIndex === 0}
-                                onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-                            />
-                            <span
-                                aria-live="polite"
-                                className="whitespace-nowrap text-xs tabular-nums text-gray-gray500 dark:text-gray-gray400"
-                            >
-                                Record {safeIndex + 1} of {records.length}
-                            </span>
-                            <Button
-                                variant="default"
-                                size="sm"
-                                icon={ChevronRight}
-                                aria-label="Next record"
-                                disabled={safeIndex === records.length - 1}
-                                onClick={() => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))}
-                            />
-                        </div>
+                        <span
+                            aria-live="polite"
+                            className="whitespace-nowrap text-xs tabular-nums text-gray-gray500 dark:text-gray-gray400"
+                        >
+                            Record {safeIndex + 1} of {records.length}
+                        </span>
                     ) : null}
                     {onExitPreview ? (
                         <Button
@@ -246,11 +228,6 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                         Print
                     </Button>
                 </div>
-            </div>
-
-            <div className="pd-screen-only border-b border-gray-gray200 bg-gray-gray25 px-4 py-1 text-[11px] text-gray-gray500 dark:border-gray-gray700 dark:bg-gray-gray800">
-                For exact sizing, set <span className="font-medium">Margins: None</span> and{' '}
-                <span className="font-medium">Scale: 100%</span> in the print dialog.
             </div>
 
             {(continuous && continuousCapped) || printCapped ? (
@@ -291,34 +268,19 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                     onOut={() => applyZoom(scale - 0.1)}
                     onIn={() => applyZoom(scale + 0.1)}
                     onReset={() => setZoom(null)}
+                    onPrev={
+                        !continuous && records.length > 1
+                            ? () => setCurrentIndex((i) => Math.max(i - 1, 0))
+                            : undefined
+                    }
+                    onNext={
+                        !continuous && records.length > 1
+                            ? () => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))
+                            : undefined
+                    }
+                    prevDisabled={safeIndex === 0}
+                    nextDisabled={safeIndex === records.length - 1}
                 />
-                {/* On-page arrows: flip pages without needing keyboard focus. */}
-                {!continuous && records.length > 1 ? (
-                    <>
-                        {safeIndex > 0 ? (
-                            <button
-                                type="button"
-                                aria-label="Previous page"
-                                onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-                                className="pd-screen-only absolute left-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-gray-gray200 bg-white text-gray-gray600 shadow-md hover:bg-gray-gray50 dark:border-gray-gray700 dark:bg-gray-gray800 dark:text-gray-gray200"
-                            >
-                                <ChevronLeft size={20} />
-                            </button>
-                        ) : null}
-                        {safeIndex < records.length - 1 ? (
-                            <button
-                                type="button"
-                                aria-label="Next page"
-                                onClick={() =>
-                                    setCurrentIndex((i) => Math.min(i + 1, records.length - 1))
-                                }
-                                className="pd-screen-only absolute right-3 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center rounded-full border border-gray-gray200 bg-white text-gray-gray600 shadow-md hover:bg-gray-gray50 dark:border-gray-gray700 dark:bg-gray-gray800 dark:text-gray-gray200"
-                            >
-                                <ChevronRight size={20} />
-                            </button>
-                        ) : null}
-                    </>
-                ) : null}
             </div>
 
             {presenting ? (
@@ -347,36 +309,32 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                     </button>
 
                     {records.length > 1 ? (
-                        <>
-                            {safeIndex > 0 ? (
-                                <button
-                                    type="button"
-                                    aria-label="Previous page"
-                                    onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-                                    className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                                >
-                                    <ChevronLeft size={26} />
-                                </button>
-                            ) : null}
-                            {safeIndex < records.length - 1 ? (
-                                <button
-                                    type="button"
-                                    aria-label="Next page"
-                                    onClick={() =>
-                                        setCurrentIndex((i) => Math.min(i + 1, records.length - 1))
-                                    }
-                                    className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                                >
-                                    <ChevronRight size={26} />
-                                </button>
-                            ) : null}
-                            <div
+                        <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2">
+                            <button
+                                type="button"
+                                aria-label="Previous page"
+                                disabled={safeIndex === 0}
+                                onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30"
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+                            <span
                                 aria-live="polite"
-                                className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs tabular-nums text-white"
+                                className="min-w-[3.5rem] rounded-full bg-black/50 px-3 py-1 text-center text-xs tabular-nums text-white"
                             >
                                 {safeIndex + 1} / {records.length}
-                            </div>
-                        </>
+                            </span>
+                            <button
+                                type="button"
+                                aria-label="Next page"
+                                disabled={safeIndex === records.length - 1}
+                                onClick={() => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))}
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30"
+                            >
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
                     ) : null}
                 </div>
             ) : null}
