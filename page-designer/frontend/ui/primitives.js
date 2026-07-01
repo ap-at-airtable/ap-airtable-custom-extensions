@@ -106,6 +106,14 @@ export function TextArea({value, onChange, rows = 3, className, ...rest}) {
     );
 }
 
+function Caret({up}) {
+    return (
+        <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d={up ? 'm6 15 6-6 6 6' : 'm6 9 6 6 6-6'} />
+        </svg>
+    );
+}
+
 export function NumberInput({id, value, onChange, min, max, step = 1, suffix, className}) {
     const clamp = (n) => {
         let v = n;
@@ -113,6 +121,9 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
         if (typeof max === 'number') v = Math.min(max, v);
         return v;
     };
+    const stepBy = (dir) => onChange(clamp((Number.isFinite(value) ? value : 0) + dir * step));
+    const stepBtn =
+        'flex h-[13px] w-4 items-center justify-center text-gray-gray400 hover:text-gray-gray700 dark:hover:text-gray-gray100';
     return (
         <div className={cx('relative flex items-center', className)}>
             <input
@@ -128,17 +139,26 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
                 }}
                 className={cx(
                     FIELD,
-                    suffix && 'pr-7',
+                    suffix ? 'pr-12' : 'pr-7',
                     'tabular-nums',
-                    // Hide the native number spinners so they don't overlap the suffix.
+                    // Hide the native spinners; a custom always-visible stepper replaces
+                    // them (below) so it can sit clear of the suffix.
                     '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
                 )}
             />
             {suffix ? (
-                <span className="pointer-events-none absolute right-2.5 text-xs text-gray-gray500 dark:text-gray-gray400">
+                <span className="pointer-events-none absolute right-7 text-xs text-gray-gray500 dark:text-gray-gray400">
                     {suffix}
                 </span>
             ) : null}
+            <div className="absolute right-1 flex flex-col">
+                <button type="button" tabIndex={-1} aria-label="Increase" onClick={() => stepBy(1)} className={stepBtn}>
+                    <Caret up />
+                </button>
+                <button type="button" tabIndex={-1} aria-label="Decrease" onClick={() => stepBy(-1)} className={stepBtn}>
+                    <Caret />
+                </button>
+            </div>
         </div>
     );
 }
