@@ -13,6 +13,7 @@ import {
     sendBackward,
     clampElementToPage,
     clampGroupDelta,
+    columnFractions,
     arrangeGrid,
     snapElement,
     pruneDeletedFieldElements,
@@ -143,6 +144,15 @@ test('hydratePages always returns at least one page', () => {
     assert.equal(pages.length, 1);
     assert.deepEqual(pages[0].layout, {order: [], elementsById: {}});
     assert.equal(pages[0].backgroundColor, '#ffffff');
+});
+
+test('columnFractions: equal by default, normalized, missing cols share equally', () => {
+    assert.deepEqual(columnFractions([], {}), []);
+    assert.deepEqual(columnFractions(['a', 'b'], {}), [0.5, 0.5]);
+    assert.deepEqual(columnFractions(['a', 'b', 'c'], {a: 0.5, b: 0.25, c: 0.25}), [0.5, 0.25, 0.25]);
+    // A missing column defaults to an equal share, then the whole set renormalizes.
+    const r = columnFractions(['a', 'b'], {a: 0.6}); // b -> 0.5; sum 1.1
+    assert.ok(Math.abs(r[0] - 0.6 / 1.1) < 1e-9 && Math.abs(r[1] - 0.5 / 1.1) < 1e-9);
 });
 
 test('arrangeGrid packs boxes top-to-bottom then wraps columns, no overlap', () => {

@@ -6,7 +6,8 @@
 
 import {useRef, useState} from 'react';
 import {resolvePageSizePx, PAGE_GRID_SIZE, snapToGrid} from '../domain/page_geometry.mjs';
-import {getOrderedElements, clampElementToPage, clampGroupDelta} from '../domain/layout_model.mjs';
+import {getOrderedElements, clampElementToPage, clampGroupDelta, columnFractions} from '../domain/layout_model.mjs';
+import {LinkedRecordDisplay} from '../domain/element_types.mjs';
 import {PageCanvas} from '../render/page_canvas.js';
 import {FIELD_DRAG_TYPE} from './field_rail.js';
 
@@ -145,6 +146,79 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({event}) => onPreview({[id]: {rotation: angleFor(event)}}),
             onEnd: ({event}) => onCommit({[id]: {rotation: angleFor(event)}}),
+        });
+    };
+
+    // Resize the boundary between columns k and k+1 of a linked-record table,
+    // shifting width between just those two (fractions always sum to 1).
+    const startColumnResize = (e, el, k) => {
+        const cols = el.linkedColumns || [];
+        const pad = el.style.padding || 0;
+        const tableWidth = Math.max(1, el.width - 2 * pad);
+        const start = columnFractions(cols, el.linkedColumnWidths);
+        const compute = (dx) => {
+            const min = 0.06;
+            let d = dx / scale / tableWidth;
+            d = Math.max(-(start[k] - min), Math.min(start[k + 1] - min, d));
+            const next = [...start];
+            next[k] += d;
+            next[k + 1] -= d;
+            const map = {};
+            cols.forEach((id, i) => {
+                map[id] = next[i];
+            });
+            return {[el.id]: {linkedColumnWidths: map}};
+        };
+        beginGesture(e, {
+            onMove: ({dx}) => onPreview(compute(dx)),
+            onEnd: ({dx}) => onCommit(compute(dx)),
+        });
+    };
+
+    // Column-divider handles for a selected linked-record table (edit-only overlay).
+    const columnDividers = (el) => {
+        if (el.style.linkedRecordDisplay !== LinkedRecordDisplay.TABLE || el.rotation) {
+            return null;
+        }
+        const cols = el.linkedColumns || [];
+        if (cols.length < 2) {
+            return null;
+        }
+        const pad = el.style.padding || 0;
+        const tableWidth = el.width - 2 * pad;
+        const fr = columnFractions(cols, el.linkedColumnWidths);
+        let cum = 0;
+        return cols.slice(0, -1).map((_, k) => {
+            cum += fr[k];
+            return (
+                <div
+                    key={`col-${k}`}
+                    onPointerDown={(e) => startColumnResize(e, el, k)}
+                    title="Drag to resize column"
+                    style={{
+                        position: 'absolute',
+                        left: (pad + cum * tableWidth) * scale,
+                        top: 0,
+                        height: '100%',
+                        width: 10,
+                        transform: 'translateX(-50%)',
+                        cursor: 'col-resize',
+                        zIndex: 5,
+                    }}
+                >
+                    <div
+                        style={{
+                            position: 'absolute',
+                            left: '50%',
+                            top: 0,
+                            height: '100%',
+                            width: 2,
+                            transform: 'translateX(-50%)',
+                            background: 'rgba(22,110,225,0.5)',
+                        }}
+                    />
+                </div>
+            );
         });
     };
 
@@ -321,6 +395,7 @@ export function EditorCanvas({
                                               />
                                           ))
                                         : null}
+                                    {columnDividers(element)}
                                 </>
                             ) : null}
                         </div>

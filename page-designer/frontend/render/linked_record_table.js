@@ -5,6 +5,7 @@
 
 import {useBase, useRecords} from '@airtable/blocks/interface/ui';
 import {extractLinkedRecords} from '../domain/cell_value_helpers.mjs';
+import {columnFractions} from '../domain/layout_model.mjs';
 import {textStyle} from './geometry_style.js';
 
 export function LinkedRecordTable({element, field, record, table}) {
@@ -37,6 +38,8 @@ export function LinkedRecordTable({element, field, record, table}) {
 
     const recordById = new Map(linkedRecords.map((r) => [r.id, r]));
     const refs = record ? extractLinkedRecords(record.getCellValue(field)) : [];
+    // Per-column widths (fractions) drive the <colgroup>; equal by default.
+    const fractions = columnFractions(columns.map((c) => c.id), element.linkedColumnWidths);
 
     const cellStyle = {
         ...ts,
@@ -51,6 +54,11 @@ export function LinkedRecordTable({element, field, record, table}) {
     return (
         // table-layout: fixed gives columns equal width so one column can't hog space.
         <table style={{...ts, borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed'}}>
+            <colgroup>
+                {columns.map((col, i) => (
+                    <col key={col.id} style={{width: `${fractions[i] * 100}%`}} />
+                ))}
+            </colgroup>
             <thead>
                 <tr>
                     {columns.map((col) => (

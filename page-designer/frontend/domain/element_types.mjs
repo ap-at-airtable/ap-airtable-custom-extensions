@@ -113,6 +113,8 @@ export function makeElement({id, kind, x, y, fieldId = null, overrides = {}}) {
         barcodeFormat: kind === ElementKind.BARCODE ? BarcodeFormat.CODE128 : null,
         // Linked-table field ids shown as columns when a linked field renders as a table.
         linkedColumns: [],
+        // Per-column width fractions (fieldId -> fraction); missing = equal share.
+        linkedColumnWidths: {},
         // Conditional rules ({visibility, color}); null = always shown, base color.
         rules: null,
         style: defaultStyle(),

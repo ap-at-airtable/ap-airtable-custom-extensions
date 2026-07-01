@@ -141,6 +141,20 @@ export function hydratePages(rawPages, legacyLayout, legacyBackground) {
     return [toEntry(legacyBackground, legacyLayout)];
 }
 
+// Normalized column widths (fractions summing to 1) for the given column ids. A
+// missing/invalid entry defaults to an equal share, and the result is renormalized
+// so it always sums to 1 even after columns are added/removed. Pure/testable.
+export function columnFractions(columnIds, widths) {
+    const n = columnIds.length;
+    if (n === 0) {
+        return [];
+    }
+    const w = widths || {};
+    const raw = columnIds.map((id) => (typeof w[id] === 'number' && w[id] > 0 ? w[id] : 1 / n));
+    const sum = raw.reduce((a, b) => a + b, 0);
+    return sum > 0 ? raw.map((v) => v / sum) : columnIds.map(() => 1 / n);
+}
+
 // Non-overlapping positions for `count` equal-size boxes: packed top-to-bottom
 // from the top-left margin, wrapping into the next column when a column is full.
 // Used when adding several elements at once so they never stack on top of each
