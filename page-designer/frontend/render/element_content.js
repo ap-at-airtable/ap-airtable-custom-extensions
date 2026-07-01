@@ -5,8 +5,9 @@
 
 import {memo} from 'react';
 import {FieldType} from '@airtable/blocks/interface/models';
+import {colorUtils} from '@airtable/blocks/interface/ui';
 import {ElementKind, LinkedRecordDisplay} from '../domain/element_types.mjs';
-import {extractLinkedRecords} from '../domain/cell_value_helpers.mjs';
+import {extractLinkedRecords, extractSelectChoices} from '../domain/cell_value_helpers.mjs';
 import {renderTemplate, formatValue, evaluateCondition, effectiveNumberFormat} from '../domain/dynamic_content.mjs';
 import {textStyle} from './geometry_style.js';
 import {ImageElement} from './image_element.js';
@@ -53,6 +54,74 @@ function LinkedRecordList({css, field, record}) {
     );
 }
 
+// Black or white text depending on how light the pill background is.
+function readableTextColor(hex) {
+    const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || '');
+    if (!m) {
+        return '#1d1f25';
+    }
+    const n = parseInt(m[1], 16);
+    const r = (n >> 16) & 255;
+    const g = (n >> 8) & 255;
+    const b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#1d1f25' : '#ffffff';
+}
+
+// Resolve a choice's hex: prefer the color on the cell value, else look it up in
+// the field's choice config. Returns null if the choice has no color.
+function choiceHex(field, choice) {
+    let color = choice.color;
+    if (!color) {
+        const choices = (field.config && field.config.options && field.config.options.choices) || [];
+        const match = choices.find((c) => c.id === choice.id) || choices.find((c) => c.name === choice.name);
+        color = match && match.color;
+    }
+    return color ? colorUtils.getHexForColor(color) : null;
+}
+
+const TEXT_ALIGN_TO_JUSTIFY = {left: 'flex-start', center: 'center', right: 'flex-end'};
+
+// Renders single/multi-select choices as colored pills (chips) respecting each
+// choice's color. Editor preview (no record) shows the field name as a neutral pill.
+function SelectPills({field, record, css}) {
+    const choices = record ? extractSelectChoices(record.getCellValue(field)) : [{name: field.name}];
+    return (
+        <div
+            style={{
+                ...css,
+                display: 'flex',
+                flexWrap: 'wrap',
+                gap: '4px',
+                justifyContent: TEXT_ALIGN_TO_JUSTIFY[css.textAlign] || 'flex-start',
+            }}
+        >
+            {choices.map((c, i) => {
+                const hex = choiceHex(field, c) || '#e5e7eb';
+                return (
+                    <span
+                        key={i}
+                        style={{
+                            backgroundColor: hex,
+                            color: readableTextColor(hex),
+                            borderRadius: '999px',
+                            padding: '1px 8px',
+                            fontSize: css.fontSize,
+                            fontFamily: css.fontFamily,
+                            lineHeight: 1.45,
+                            maxWidth: '100%',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
+                        {c.name}
+                    </span>
+                );
+            })}
+        </div>
+    );
+}
+
 function FieldText({element, css, record, table}) {
     const field = element.fieldId ? table.getFieldByIdIfExists(element.fieldId) : null;
     if (element.fieldId && !field) {
@@ -61,12 +130,16 @@ function FieldText({element, css, record, table}) {
     const label = element.style.showFieldLabel && field ? field.name : null;
     const isLinked = field && field.type === FieldType.MULTIPLE_RECORD_LINKS;
     const linkedMode = element.style.linkedRecordDisplay || LinkedRecordDisplay.COMMA;
+    const isSelectPill =
+        field && field.type === FieldType.SINGLE_SELECT && element.style.selectDisplay === 'pill';
 
     let body;
     if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
         body = <LinkedRecordTable element={element} field={field} record={record} table={table} />;
     } else if (isLinked && linkedMode === LinkedRecordDisplay.LIST) {
         body = <LinkedRecordList css={css} field={field} record={record} />;
+    } else if (isSelectPill) {
+        body = <SelectPills field={field} record={record} css={css} />;
     } else {
         let value = '';
         if (record && field) {

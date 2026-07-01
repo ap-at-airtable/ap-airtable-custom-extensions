@@ -219,6 +219,8 @@ export function ElementInspector({
         kind === ElementKind.FIELD &&
         boundField &&
         boundField.config.type === FieldType.MULTIPLE_RECORD_LINKS;
+    const isSingleSelectField =
+        kind === ElementKind.FIELD && boundField && boundField.config.type === FieldType.SINGLE_SELECT;
     // Number/currency formatting only applies to numeric fields.
     const isNumericField = boundField && NUMERIC_FIELD_TYPES.has(boundField.config.type);
     // Percent style multiplies by 100 (0.5 -> "50%"), so it only makes sense on a
@@ -306,6 +308,19 @@ export function ElementInspector({
 
             {kind === ElementKind.FIELD && !isLinkedField ? (
                 <Section title="Format">
+                    {isSingleSelectField ? (
+                        <Field label="Display">
+                            <Segmented
+                                label="Display"
+                                value={style.selectDisplay || 'text'}
+                                options={[
+                                    {value: 'text', label: 'Text'},
+                                    {value: 'pill', label: 'Pill'},
+                                ]}
+                                onChange={(v) => setStyle({selectDisplay: v})}
+                            />
+                        </Field>
+                    ) : null}
                     {isNumericField ? (
                         <>
                             <Field label="Number format" hint="Auto uses the field's own formatting.">

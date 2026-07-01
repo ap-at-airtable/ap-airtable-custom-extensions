@@ -67,6 +67,8 @@ export function defaultStyle() {
         imageFit: ImageFit.CONTAIN,
         showFieldLabel: false,
         linkedRecordDisplay: LinkedRecordDisplay.COMMA,
+        // How a single-select value renders: 'text' or 'pill' (colored chip).
+        selectDisplay: 'text',
         lineColor: '#1d1f25',
         lineThickness: 1,
         // Value formatting for FIELD elements (numberFormat 'auto' = the field's

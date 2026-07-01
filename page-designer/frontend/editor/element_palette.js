@@ -2,13 +2,14 @@
 // "Add fields" opens a multi-select to drop several bound fields at once,
 // auto-arranged so they don't overlap.
 
-import {useState} from 'react';
+import {useRef, useState} from 'react';
 import {ElementKind, ElementKindLabels} from '../domain/element_types.mjs';
 import {Button} from '../ui/primitives.js';
-import {FieldIcon, TextIcon, ImageIcon, BarcodeIcon, QrIcon, LineIcon, PlusIcon} from '../ui/icons.js';
+import {TextIcon, ImageIcon, BarcodeIcon, QrIcon, LineIcon, PlusIcon} from '../ui/icons.js';
 
+// "Field" isn't here: adding fields goes through "Add fields" (multi-select), which
+// drops them already bound. The kinds below are the non-field element types.
 const ITEMS = [
-    {kind: ElementKind.FIELD, icon: FieldIcon},
     {kind: ElementKind.TEXT, icon: TextIcon},
     {kind: ElementKind.IMAGE, icon: ImageIcon},
     {kind: ElementKind.BARCODE, icon: BarcodeIcon},
@@ -22,11 +23,24 @@ const CHIP =
 function AddFieldsMenu({fields, onAddFields}) {
     const [open, setOpen] = useState(false);
     const [selected, setSelected] = useState(() => new Set());
+    // The popover is positioned with `fixed` (from the trigger's rect) so the
+    // palette's horizontal-scroll container can't clip it.
+    const [pos, setPos] = useState(null);
+    const btnRef = useRef(null);
 
     const close = () => setOpen(false);
     const toggleOpen = () => {
+        if (open) {
+            close();
+            return;
+        }
+        const r = btnRef.current?.getBoundingClientRect();
+        if (r) {
+            const width = 240;
+            setPos({left: Math.max(8, Math.min(r.left, window.innerWidth - width - 8)), top: r.bottom + 4});
+        }
         setSelected(new Set());
-        setOpen((o) => !o);
+        setOpen(true);
     };
     const toggle = (id) =>
         setSelected((prev) => {
@@ -43,15 +57,18 @@ function AddFieldsMenu({fields, onAddFields}) {
     };
 
     return (
-        <div className="relative shrink-0">
-            <button type="button" onClick={toggleOpen} className={CHIP} aria-expanded={open}>
+        <div className="shrink-0">
+            <button ref={btnRef} type="button" onClick={toggleOpen} className={CHIP} aria-expanded={open}>
                 <PlusIcon size={14} />
                 Add fields
             </button>
-            {open ? (
+            {open && pos ? (
                 <>
-                    <div className="fixed inset-0 z-20" onClick={close} />
-                    <div className="absolute left-0 top-full z-30 mt-1 w-60 rounded-lg border border-gray-gray200 bg-white p-2 shadow-lg dark:border-gray-gray700 dark:bg-gray-gray800">
+                    <div className="fixed inset-0 z-40" onClick={close} />
+                    <div
+                        className="fixed z-50 w-60 rounded-lg border border-gray-gray200 bg-white p-2 shadow-lg dark:border-gray-gray700 dark:bg-gray-gray800"
+                        style={{left: pos.left, top: pos.top}}
+                    >
                         <div className="flex items-center justify-between px-1 pb-1">
                             <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500 dark:text-gray-gray400">
                                 Add fields
