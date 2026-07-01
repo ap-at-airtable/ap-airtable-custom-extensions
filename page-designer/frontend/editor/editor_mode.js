@@ -11,7 +11,7 @@ import {ElementPalette} from './element_palette.js';
 import {PrintLayer} from '../view/print_layer.js';
 import {useContainerWidth} from '../ui/use_container_width.js';
 import {resolvePageSizePx, snapToGrid, PAGE_GRID_SIZE} from '../domain/page_geometry.mjs';
-import {defaultSizeForKind} from '../domain/element_types.mjs';
+import {defaultSizeForKind, ElementKind} from '../domain/element_types.mjs';
 import {
     addNewElement,
     updateElement,
@@ -21,6 +21,8 @@ import {
     bringToFront,
     sendToBack,
     clampElementToPage,
+    arrangeGrid,
+    getOrderedElements,
 } from '../domain/layout_model.mjs';
 import {alignElements, distributeElements} from '../domain/alignment.mjs';
 import {Button, IconButton} from '../ui/primitives.js';
@@ -112,6 +114,44 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         const {layout: next, element} = addNewElement(config.layout, {kind, x, y});
         persist(next);
         setSelectedIds([element.id]);
+        setRightTab('element');
+        setInspectorOpen(true);
+    };
+
+    // Add several bound fields at once, packed into a non-overlapping grid so they
+    // don't stack. Labels are shown so a freshly-populated page stays readable.
+    const handleAddFields = (fieldIds) => {
+        if (!fieldIds.length) return;
+        const {width: pw, height: ph} = resolvePageSizePx(config.page);
+        const size = defaultSizeForKind(ElementKind.FIELD);
+        const margin = PAGE_GRID_SIZE * 2;
+        // Start below existing content so the new fields don't cover it; fall back to
+        // the top margin if there's no room left below.
+        const existing = getOrderedElements(config.layout);
+        const bottom = existing.reduce((m, el) => Math.max(m, el.y + el.height), 0);
+        let startY = existing.length ? snapToGrid(bottom + PAGE_GRID_SIZE) : margin;
+        if (startY + size.height > ph - margin) startY = margin;
+        const positions = arrangeGrid(fieldIds.length, {
+            pageWidth: pw,
+            pageHeight: ph,
+            itemWidth: size.width,
+            itemHeight: size.height,
+            startY,
+        });
+        let next = config.layout;
+        const newIds = [];
+        fieldIds.forEach((fieldId, i) => {
+            const {layout: withEl, element} = addNewElement(next, {
+                kind: ElementKind.FIELD,
+                x: positions[i].x,
+                y: positions[i].y,
+                fieldId,
+            });
+            next = updateElement(withEl, element.id, {style: {showFieldLabel: true}});
+            newIds.push(element.id);
+        });
+        persist(next);
+        setSelectedIds(newIds);
         setRightTab('element');
         setInspectorOpen(true);
     };
@@ -274,7 +314,11 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             <div className="pd-screen-only flex h-full flex-col">
             <div className="flex items-center gap-2 border-b border-gray-gray200 bg-white px-3 py-2 dark:border-gray-gray700 dark:bg-gray-gray800">
                 <div className="min-w-0 flex-1 overflow-x-auto">
-                    <ElementPalette onAdd={handleAdd} />
+                    <ElementPalette
+                        onAdd={handleAdd}
+                        fields={table.fields.map((f) => ({id: f.id, name: f.name}))}
+                        onAddFields={handleAddFields}
+                    />
                 </div>
                 <div className="flex shrink-0 items-center gap-2">
                     <span className="hidden text-xs text-gray-gray500 lg:inline">

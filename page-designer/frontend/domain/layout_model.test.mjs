@@ -13,6 +13,7 @@ import {
     sendBackward,
     clampElementToPage,
     clampGroupDelta,
+    arrangeGrid,
     snapElement,
     pruneDeletedFieldElements,
     hydrateLayout,
@@ -113,6 +114,24 @@ test('clampGroupDelta keeps an in-bounds selection on the page', () => {
     assert.deepEqual(clampGroupDelta(-200, 0, starts, 100, 100), {sdx: -10, sdy: 0});
     // A modest in-range move passes through untouched.
     assert.deepEqual(clampGroupDelta(5, 5, starts, 100, 100), {sdx: 5, sdy: 5});
+});
+
+test('arrangeGrid packs boxes top-to-bottom then wraps columns, no overlap', () => {
+    const opts = {pageWidth: 200, pageHeight: 200, itemWidth: 60, itemHeight: 40, gap: 10, margin: 20};
+    // Three fit in one column (y = 20, 70, 120; step 50 > height 40).
+    assert.deepEqual(arrangeGrid(3, opts), [
+        {x: 20, y: 20},
+        {x: 20, y: 70},
+        {x: 20, y: 120},
+    ]);
+    // A fourth wraps to the next column (x = 20 + 60 + 10 = 90).
+    assert.deepEqual(arrangeGrid(5, opts), [
+        {x: 20, y: 20},
+        {x: 20, y: 70},
+        {x: 20, y: 120},
+        {x: 90, y: 20},
+        {x: 90, y: 70},
+    ]);
 });
 
 test('clampGroupDelta freezes an axis when an element already overflows', () => {

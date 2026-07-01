@@ -124,6 +124,32 @@ export function sendBackward(layout, id) {
     return idx <= 0 ? layout : reorder(layout, id, idx - 1);
 }
 
+// Non-overlapping positions for `count` equal-size boxes: packed top-to-bottom
+// from the top-left margin, wrapping into the next column when a column is full.
+// Used when adding several elements at once so they never stack on top of each
+// other. Pure/testable. If there are more than fit on the page, the overflow
+// column is clamped on-page (rare extreme case).
+export function arrangeGrid(
+    count,
+    {pageWidth, pageHeight, itemWidth, itemHeight, gap = PAGE_GRID_SIZE, margin = PAGE_GRID_SIZE * 2, startY = null},
+) {
+    const positions = [];
+    const top = startY == null ? margin : startY;
+    const usableBottom = pageHeight - margin;
+    const lastColumnX = Math.max(margin, pageWidth - margin - itemWidth);
+    let x = margin;
+    let y = top;
+    for (let i = 0; i < count; i += 1) {
+        if (y + itemHeight > usableBottom && y > top) {
+            x += itemWidth + gap;
+            y = top;
+        }
+        positions.push({x: Math.min(x, lastColumnX), y});
+        y += itemHeight + gap;
+    }
+    return positions;
+}
+
 // Clamps a rigid-group translation (sdx, sdy in page px) so no element in the
 // selection leaves the page. `starts` are the pre-move element boxes. If an element
 // already overflows the page (e.g. the page was shrunk after placement) the feasible
