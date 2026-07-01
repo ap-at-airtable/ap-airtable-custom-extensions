@@ -495,6 +495,86 @@ export function ElementInspector({
                 </Section>
             ) : null}
 
+            {showAppearance ? (
+                <Section title="Appearance">
+                    <Field label="Background">
+                        <ColorInput
+                            value={style.backgroundColor}
+                            onChange={(backgroundColor) => setStyle({backgroundColor})}
+                            allowClear
+                        />
+                    </Field>
+                    <Field label="Padding">
+                        <NumberInput
+                            value={style.padding}
+                            min={0}
+                            suffix="px"
+                            onChange={(padding) => setStyle({padding})}
+                        />
+                    </Field>
+                    <Row>
+                        <Field label="Border width">
+                            <NumberInput
+                                value={style.borderWidth}
+                                min={0}
+                                suffix="px"
+                                onChange={(borderWidth) => setStyle({borderWidth})}
+                            />
+                        </Field>
+                        <Field label="Border radius">
+                            <NumberInput
+                                value={style.borderRadius}
+                                min={0}
+                                suffix="px"
+                                onChange={(borderRadius) => setStyle({borderRadius})}
+                            />
+                        </Field>
+                    </Row>
+                    <Field label="Border color">
+                        <ColorInput
+                            value={style.borderColor}
+                            onChange={(borderColor) => setStyle({borderColor})}
+                        />
+                    </Field>
+                </Section>
+            ) : null}
+
+            <Section title="Position & size">
+                <Row>
+                    <Field label="X">
+                        <NumberInput value={element.x} suffix="px" onChange={(x) => onChange({x})} />
+                    </Field>
+                    <Field label="Y">
+                        <NumberInput value={element.y} suffix="px" onChange={(y) => onChange({y})} />
+                    </Field>
+                </Row>
+                <Row>
+                    <Field label="Width">
+                        <NumberInput
+                            value={element.width}
+                            suffix="px"
+                            onChange={(width) => onChange({width})}
+                        />
+                    </Field>
+                    <Field label="Height">
+                        <NumberInput
+                            value={element.height}
+                            suffix="px"
+                            onChange={(height) => onChange({height})}
+                        />
+                    </Field>
+                </Row>
+                <Field label="Rotation">
+                    <NumberInput
+                        value={element.rotation}
+                        min={-180}
+                        max={180}
+                        suffix="°"
+                        onChange={(rotation) => onChange({rotation})}
+                    />
+                </Field>
+            </Section>
+
             <Section title="Rules">
                 <Field label="Show this element">
                     <Select
@@ -548,85 +628,6 @@ export function ElementInspector({
                     </>
                 ) : null}
             </Section>
-
-            <Section title="Position & size">
-                <Row>
-                    <Field label="X">
-                        <NumberInput value={element.x} suffix="px" onChange={(x) => onChange({x})} />
-                    </Field>
-                    <Field label="Y">
-                        <NumberInput value={element.y} suffix="px" onChange={(y) => onChange({y})} />
-                    </Field>
-                </Row>
-                <Row>
-                    <Field label="Width">
-                        <NumberInput
-                            value={element.width}
-                            suffix="px"
-                            onChange={(width) => onChange({width})}
-                        />
-                    </Field>
-                    <Field label="Height">
-                        <NumberInput
-                            value={element.height}
-                            suffix="px"
-                            onChange={(height) => onChange({height})}
-                        />
-                    </Field>
-                </Row>
-                <Field label="Rotation">
-                    <NumberInput
-                        value={element.rotation}
-                        min={-180}
-                        max={180}
-                        suffix="°"
-                        onChange={(rotation) => onChange({rotation})}
-                    />
-                </Field>
-            </Section>
-
-            {showAppearance ? (
-                <Section title="Appearance">
-                    <Field label="Background">
-                        <ColorInput
-                            value={style.backgroundColor}
-                            onChange={(backgroundColor) => setStyle({backgroundColor})}
-                        />
-                    </Field>
-                    <Field label="Padding">
-                        <NumberInput
-                            value={style.padding}
-                            min={0}
-                            suffix="px"
-                            onChange={(padding) => setStyle({padding})}
-                        />
-                    </Field>
-                    <Row>
-                        <Field label="Border width">
-                            <NumberInput
-                                value={style.borderWidth}
-                                min={0}
-                                suffix="px"
-                                onChange={(borderWidth) => setStyle({borderWidth})}
-                            />
-                        </Field>
-                        <Field label="Border radius">
-                            <NumberInput
-                                value={style.borderRadius}
-                                min={0}
-                                suffix="px"
-                                onChange={(borderRadius) => setStyle({borderRadius})}
-                            />
-                        </Field>
-                    </Row>
-                    <Field label="Border color">
-                        <ColorInput
-                            value={style.borderColor}
-                            onChange={(borderColor) => setStyle({borderColor})}
-                        />
-                    </Field>
-                </Section>
-            ) : null}
         </div>
     );
 }

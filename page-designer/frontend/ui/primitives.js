@@ -2,6 +2,7 @@
 // component library. Refined, consistent sizing; dependency-free; dark-mode aware.
 
 import {useId, useState, cloneElement, isValidElement} from 'react';
+import {CloseIcon} from './icons.js';
 
 const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -238,7 +239,7 @@ export function Segmented({value, options, onChange, className, label, ...rest})
     );
 }
 
-export function ColorInput({value, onChange, className, ...rest}) {
+export function ColorInput({value, onChange, className, allowClear = false, ...rest}) {
     const trimmed = typeof value === 'string' ? value.trim() : '';
     // The native picker only holds hex; it opens at black for non-hex values.
     const safe = trimmed.startsWith('#') ? trimmed : '#000000';
@@ -271,8 +272,21 @@ export function ColorInput({value, onChange, className, ...rest}) {
                 type="text"
                 value={value ?? ''}
                 onChange={(e) => onChange(e.target.value)}
-                className={cx(FIELD, 'flex-1 font-mono text-xs')}
+                // Fixed, compact width: it only holds a short hex/named value (fits
+                // "transparent"), so it shouldn't stretch across the whole panel.
+                className={cx(FIELD.replace('w-full', 'w-32'), 'font-mono text-xs')}
             />
+            {allowClear && hasColor ? (
+                <button
+                    type="button"
+                    onClick={() => onChange('transparent')}
+                    title="Reset to transparent"
+                    aria-label="Reset to transparent"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-gray500 hover:bg-gray-gray100 hover:text-gray-gray700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-blueLight1 dark:text-gray-gray400 dark:hover:bg-gray-gray700"
+                >
+                    <CloseIcon size={14} />
+                </button>
+            ) : null}
         </div>
     );
 }
