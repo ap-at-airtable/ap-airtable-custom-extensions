@@ -49,20 +49,19 @@ export function LinkedRecordTable({element, field, record, table}) {
         verticalAlign: 'top',
         overflowWrap: 'break-word',
     };
-    const headStyle = {...cellStyle, fontWeight: 'bold'};
+    const headStyle = {...cellStyle, fontWeight: 'bold', backgroundColor: element.style.tableHeaderColor};
+    const stripeRows = !!element.style.tableStripeRows;
+    const rowStyle = (i) => (stripeRows && i % 2 === 1 ? {backgroundColor: 'rgba(0,0,0,0.04)'} : undefined);
 
     return (
-        // table-layout: fixed gives columns equal width so one column can't hog space.
+        // Per-column widths go on the first-row <th>, not a <colgroup>: a <col> width
+        // updated after the initial layout isn't honored here, but the first-row cells
+        // reliably drive the fixed layout.
         <table style={{...ts, borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed'}}>
-            <colgroup>
-                {columns.map((col, i) => (
-                    <col key={col.id} style={{width: `${fractions[i] * 100}%`}} />
-                ))}
-            </colgroup>
             <thead>
                 <tr>
-                    {columns.map((col) => (
-                        <th key={col.id} style={headStyle}>
+                    {columns.map((col, i) => (
+                        <th key={col.id} style={{...headStyle, width: `${fractions[i] * 100}%`}}>
                             {col.name}
                         </th>
                     ))}
@@ -73,7 +72,7 @@ export function LinkedRecordTable({element, field, record, table}) {
                     refs.map((ref, rowIndex) => {
                         const linkedRecord = recordById.get(ref.id);
                         return (
-                            <tr key={`${ref.id}-${rowIndex}`}>
+                            <tr key={`${ref.id}-${rowIndex}`} style={rowStyle(rowIndex)}>
                                 {columns.map((col, colIndex) => (
                                     <td key={col.id} style={cellStyle}>
                                         {linkedRecord

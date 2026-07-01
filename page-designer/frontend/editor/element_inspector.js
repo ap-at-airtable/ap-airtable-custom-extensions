@@ -283,11 +283,24 @@ export function ElementInspector({
                     {isLinkedField &&
                     style.linkedRecordDisplay === LinkedRecordDisplay.TABLE &&
                     linkedTable ? (
-                        <LinkedColumnsField
-                            linkedTable={linkedTable}
-                            linkedColumns={linkedColumns}
-                            onChange={onChange}
-                        />
+                        <>
+                            <LinkedColumnsField
+                                linkedTable={linkedTable}
+                                linkedColumns={linkedColumns}
+                                onChange={onChange}
+                            />
+                            <Field label="Header fill">
+                                <ColorInput
+                                    value={style.tableHeaderColor}
+                                    onChange={(tableHeaderColor) => setStyle({tableHeaderColor})}
+                                />
+                            </Field>
+                            <Toggle
+                                label="Alternate row shading"
+                                checked={!!style.tableStripeRows}
+                                onChange={(tableStripeRows) => setStyle({tableStripeRows})}
+                            />
+                        </>
                     ) : null}
                 </Section>
             ) : null}

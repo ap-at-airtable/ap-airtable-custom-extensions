@@ -67,6 +67,9 @@ export function defaultStyle() {
         imageFit: ImageFit.CONTAIN,
         showFieldLabel: false,
         linkedRecordDisplay: LinkedRecordDisplay.COMMA,
+        // Linked-record table styling: header cell fill and zebra row shading.
+        tableHeaderColor: '#f3f3f5',
+        tableStripeRows: true,
         // How a single-select value renders: 'text' or 'pill' (colored chip).
         selectDisplay: 'text',
         lineColor: '#1d1f25',
