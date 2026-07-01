@@ -13,6 +13,8 @@ import {textStyle} from './geometry_style.js';
 import {ImageElement} from './image_element.js';
 import {BarcodeElement} from './barcode_element.js';
 import {LinkedRecordTable} from './linked_record_table.js';
+import {EditableField} from './editable_field.js';
+import {editableInputKind} from '../domain/editable_fields.mjs';
 
 // Evaluates an element's conditional rules against the current record. Returns
 // whether it should show and an optional text-color override. No rules / no
@@ -124,7 +126,7 @@ function SelectPills({field, record, css}) {
     );
 }
 
-function FieldText({element, css, record, table}) {
+function FieldText({element, css, record, table, interactive}) {
     const field = element.fieldId ? table.getFieldByIdIfExists(element.fieldId) : null;
     if (element.fieldId && !field) {
         return <DeletedField />;
@@ -134,9 +136,13 @@ function FieldText({element, css, record, table}) {
     const linkedMode = element.style.linkedRecordDisplay || LinkedRecordDisplay.COMMA;
     const isSelectPill =
         field && field.type === FieldType.SINGLE_SELECT && element.style.selectDisplay === 'pill';
+    const isInlineEditable =
+        interactive && record && field && element.style.editable && editableInputKind(field.type);
 
     let body;
-    if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
+    if (isInlineEditable) {
+        body = <EditableField field={field} record={record} table={table} css={css} />;
+    } else if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
         body = <LinkedRecordTable element={element} field={field} record={record} table={table} />;
     } else if (isLinked && linkedMode === LinkedRecordDisplay.LIST) {
         body = <LinkedRecordList css={css} field={field} record={record} />;
@@ -211,11 +217,11 @@ function Line({element}) {
 
 // Memoized: layout ops preserve element identity for untouched elements, so a
 // drag/edit only re-renders the element that actually changed (not all of them).
-export const ElementContent = memo(function ElementContent({element, record, table, colorOverride, eagerImages}) {
+export const ElementContent = memo(function ElementContent({element, record, table, colorOverride, eagerImages, interactive}) {
     const css = textStyle(colorOverride ? {...element.style, color: colorOverride} : element.style);
     switch (element.kind) {
         case ElementKind.FIELD:
-            return <FieldText element={element} css={css} record={record} table={table} />;
+            return <FieldText element={element} css={css} record={record} table={table} interactive={interactive} />;
         case ElementKind.TEXT:
             return <StaticText element={element} css={css} record={record} table={table} />;
         case ElementKind.IMAGE:

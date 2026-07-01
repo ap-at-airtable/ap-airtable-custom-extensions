@@ -23,6 +23,7 @@ import {
     VALUELESS_OPS,
     effectiveNumberFormat,
 } from '../domain/dynamic_content.mjs';
+import {isEditableFieldType} from '../domain/editable_fields.mjs';
 import {AlignMode, DistributeAxis} from '../domain/alignment.mjs';
 import {
     IconButton,
@@ -221,6 +222,8 @@ export function ElementInspector({
         boundField.config.type === FieldType.MULTIPLE_RECORD_LINKS;
     const isSingleSelectField =
         kind === ElementKind.FIELD && boundField && boundField.config.type === FieldType.SINGLE_SELECT;
+    const isEditableField =
+        kind === ElementKind.FIELD && boundField && isEditableFieldType(boundField.config.type);
     // Number/currency formatting only applies to numeric fields.
     const isNumericField = boundField && NUMERIC_FIELD_TYPES.has(boundField.config.type);
     // Percent style multiplies by 100 (0.5 -> "50%"), so it only makes sense on a
@@ -301,6 +304,13 @@ export function ElementInspector({
                                 onChange={(tableStripeRows) => setStyle({tableStripeRows})}
                             />
                         </>
+                    ) : null}
+                    {isEditableField ? (
+                        <Toggle
+                            label="Allow editing in view"
+                            checked={!!style.editable}
+                            onChange={(editable) => setStyle({editable})}
+                        />
                     ) : null}
                 </Section>
             ) : null}

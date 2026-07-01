@@ -33,6 +33,7 @@ export function PageCanvas({
     className = '',
     editor = false,
     eagerImages = false,
+    interactive = false,
 }) {
     const {width, height} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -85,6 +86,7 @@ export function PageCanvas({
                                             table={table}
                                             colorOverride={colorOverride}
                                             eagerImages={eagerImages}
+                                            interactive={interactive}
                                         />
                                     </ElementBoundary>
                                 </div>

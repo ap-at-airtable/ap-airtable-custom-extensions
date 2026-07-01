@@ -72,6 +72,8 @@ export function defaultStyle() {
         tableStripeRows: true,
         // How a single-select value renders: 'text' or 'pill' (colored chip).
         selectDisplay: 'text',
+        // Let viewers edit this field's value inline (view mode only, supported types).
+        editable: false,
         lineColor: '#1d1f25',
         lineThickness: 1,
         // Value formatting for FIELD elements (numberFormat 'auto' = the field's

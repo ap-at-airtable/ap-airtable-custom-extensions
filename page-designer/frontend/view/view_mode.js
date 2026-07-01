@@ -267,6 +267,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                                     record={sheet.record}
                                     table={table}
                                     scale={scale}
+                                    interactive
                                 />
                             </ScaledPage>
                         ))}
@@ -305,6 +306,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                             record={presentRecord}
                             table={table}
                             scale={presentScale}
+                            interactive
                         />
                     </ScaledPage>
 
