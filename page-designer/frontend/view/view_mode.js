@@ -309,36 +309,32 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                     </button>
 
                     {records.length > 1 ? (
-                        <>
-                            {safeIndex > 0 ? (
-                                <button
-                                    type="button"
-                                    aria-label="Previous page"
-                                    onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
-                                    className="absolute left-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                                >
-                                    <ChevronLeft size={26} />
-                                </button>
-                            ) : null}
-                            {safeIndex < records.length - 1 ? (
-                                <button
-                                    type="button"
-                                    aria-label="Next page"
-                                    onClick={() =>
-                                        setCurrentIndex((i) => Math.min(i + 1, records.length - 1))
-                                    }
-                                    className="absolute right-4 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20"
-                                >
-                                    <ChevronRight size={26} />
-                                </button>
-                            ) : null}
-                            <div
+                        <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2">
+                            <button
+                                type="button"
+                                aria-label="Previous page"
+                                disabled={safeIndex === 0}
+                                onClick={() => setCurrentIndex((i) => Math.max(i - 1, 0))}
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30"
+                            >
+                                <ChevronLeft size={20} />
+                            </button>
+                            <span
                                 aria-live="polite"
-                                className="absolute bottom-5 left-1/2 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-xs tabular-nums text-white"
+                                className="min-w-[3.5rem] rounded-full bg-black/50 px-3 py-1 text-center text-xs tabular-nums text-white"
                             >
                                 {safeIndex + 1} / {records.length}
-                            </div>
-                        </>
+                            </span>
+                            <button
+                                type="button"
+                                aria-label="Next page"
+                                disabled={safeIndex === records.length - 1}
+                                onClick={() => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))}
+                                className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30"
+                            >
+                                <ChevronRight size={20} />
+                            </button>
+                        </div>
                     ) : null}
                 </div>
             ) : null}
