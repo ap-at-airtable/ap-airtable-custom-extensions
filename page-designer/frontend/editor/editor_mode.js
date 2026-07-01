@@ -8,6 +8,7 @@ import {EditorCanvas} from './editor_canvas.js';
 import {ElementInspector, MultiInspector} from './element_inspector.js';
 import {PageSettingsPanel} from './page_settings_panel.js';
 import {ElementPalette} from './element_palette.js';
+import {FieldRail} from './field_rail.js';
 import {PrintLayer} from '../view/print_layer.js';
 import {useContainerWidth} from '../ui/use_container_width.js';
 import {resolvePageSizePx, snapToGrid, PAGE_GRID_SIZE} from '../domain/page_geometry.mjs';
@@ -36,6 +37,7 @@ import {
     UndoIcon,
     RedoIcon,
     PlusIcon,
+    FieldIcon,
 } from '../ui/icons.js';
 import {ZoomControl} from '../ui/zoom_control.js';
 import {usePrintMode} from '../view/use_print_mode.js';
@@ -46,9 +48,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const [rightTab, setRightTab] = useState('page');
     const [error, setError] = useState(null);
     const [inspectorOpen, setInspectorOpen] = useState(false);
+    const [railOpen, setRailOpen] = useState(false);
     const [zoom, setZoom] = useState(null);
     const [pageIndex, setPageIndex] = useState(0);
     const [centerRef, centerWidth] = useContainerWidth();
+
+    const fieldList = table.fields.map((f) => ({id: f.id, name: f.name}));
 
     const {printing, printNow} = usePrintMode(config.page);
 
@@ -161,6 +166,34 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                 fieldId,
             });
             next = updateElement(withEl, element.id, {style: {showFieldLabel: true}});
+            newIds.push(element.id);
+        });
+        persist(next);
+        setSelectedIds(newIds);
+        setRightTab('element');
+        setInspectorOpen(true);
+    };
+
+    // Drop fields from the rail at the cursor: stack them down from the drop point,
+    // clamped to the page. One field = placed exactly where dropped.
+    const handleDropFields = (fieldIds, x, y) => {
+        if (!fieldIds || !fieldIds.length) return;
+        const size = defaultSizeForKind(ElementKind.FIELD);
+        let next = currentLayout;
+        const newIds = [];
+        fieldIds.forEach((fieldId, i) => {
+            const clamped = clampElementToPage(
+                {x, y: y + i * (size.height + PAGE_GRID_SIZE), width: size.width, height: size.height},
+                pageW,
+                pageH,
+            );
+            const {layout: withEl, element} = addNewElement(next, {
+                kind: ElementKind.FIELD,
+                x: clamped.x,
+                y: clamped.y,
+                fieldId,
+            });
+            next = withEl;
             newIds.push(element.id);
         });
         persist(next);
@@ -311,12 +344,14 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         <>
             <div className="pd-screen-only flex h-full flex-col">
                 <div className="flex items-center gap-2 border-b border-gray-gray200 bg-white px-3 py-2 dark:border-gray-gray700 dark:bg-gray-gray800">
+                    <IconButton
+                        icon={FieldIcon}
+                        label="Fields"
+                        onClick={() => setRailOpen((o) => !o)}
+                        className="shrink-0 md:hidden"
+                    />
                     <div className="min-w-0 flex-1 overflow-x-auto">
-                        <ElementPalette
-                            onAdd={handleAdd}
-                            fields={table.fields.map((f) => ({id: f.id, name: f.name}))}
-                            onAddFields={handleAddFields}
-                        />
+                        <ElementPalette onAdd={handleAdd} />
                     </div>
                     <div className="flex shrink-0 items-center gap-2">
                         <span className="hidden text-xs text-gray-gray500 lg:inline">
@@ -428,6 +463,30 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                 ) : null}
 
                 <div className="relative flex min-h-0 flex-1">
+                    {/* Field rail: static left column on md+, slide-in drawer on narrow. */}
+                    {railOpen ? (
+                        <div
+                            className="absolute inset-0 z-10 bg-black/40 md:hidden"
+                            onClick={() => setRailOpen(false)}
+                        />
+                    ) : null}
+                    <div
+                        className={
+                            'absolute left-0 top-0 z-20 flex h-full w-56 max-w-[85%] flex-col bg-white shadow-xl transition-transform ' +
+                            'md:static md:z-auto md:max-w-none md:shrink-0 md:border-r md:border-gray-gray200 md:shadow-none ' +
+                            'dark:bg-gray-gray800 md:dark:border-gray-gray700 ' +
+                            (railOpen ? 'translate-x-0' : '-translate-x-full md:translate-x-0')
+                        }
+                    >
+                        <FieldRail
+                            fields={fieldList}
+                            onAddFields={(ids) => {
+                                handleAddFields(ids);
+                                setRailOpen(false);
+                            }}
+                        />
+                    </div>
+
                     <div className="relative flex min-w-0 flex-1 flex-col">
                         <div ref={centerRef} className="pd-desk min-w-0 flex-1 overflow-auto">
                             <div className="flex min-h-full w-max min-w-full items-start justify-center p-6">
@@ -445,6 +504,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                         setDragOverride(updateElements(currentLayout, patches))
                                     }
                                     onCommit={(patches) => persist(updateElements(currentLayout, patches))}
+                                    onDropFields={handleDropFields}
                                 />
                             </div>
                         </div>

@@ -8,6 +8,7 @@ import {useRef, useState} from 'react';
 import {resolvePageSizePx, PAGE_GRID_SIZE, snapToGrid} from '../domain/page_geometry.mjs';
 import {getOrderedElements, clampElementToPage, clampGroupDelta} from '../domain/layout_model.mjs';
 import {PageCanvas} from '../render/page_canvas.js';
+import {FIELD_DRAG_TYPE} from './field_rail.js';
 
 const HANDLES = [
     {key: 'nw', dirX: -1, dirY: -1, cursor: 'nwse-resize', left: 0, top: 0},
@@ -66,6 +67,7 @@ export function EditorCanvas({
     onToggle,
     onPreview,
     onCommit,
+    onDropFields,
 }) {
     const overlayRef = useRef(null);
     const [marquee, setMarquee] = useState(null);
@@ -182,10 +184,35 @@ export function EditorCanvas({
         });
     };
 
+    // Accept fields dragged from the Field rail: drop places them at the cursor.
+    const onDragOver = (e) => {
+        if (e.dataTransfer.types.includes(FIELD_DRAG_TYPE)) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'copy';
+        }
+    };
+    const onDrop = (e) => {
+        const data = e.dataTransfer.getData(FIELD_DRAG_TYPE);
+        if (!data || !onDropFields) return;
+        e.preventDefault();
+        let ids;
+        try {
+            ids = JSON.parse(data);
+        } catch {
+            return;
+        }
+        const rect = overlayRef.current.getBoundingClientRect();
+        const x = snapToGrid((e.clientX - rect.left) / scale);
+        const y = snapToGrid((e.clientY - rect.top) / scale);
+        onDropFields(ids, x, y);
+    };
+
     return (
         <div
             ref={overlayRef}
             onPointerDown={startMarquee}
+            onDragOver={onDragOver}
+            onDrop={onDrop}
             style={{position: 'relative', width: pageW * scale, height: pageH * scale, flex: 'none'}}
         >
             <div style={{position: 'absolute', top: 0, left: 0}}>
