@@ -42,10 +42,9 @@ export function LinkedRecordTable({element, field, record, table}) {
     const fractions = columnFractions(columns.map((c) => c.id), element.linkedColumnWidths);
 
     const cellStyle = {
-        ...ts,
+        ...ts, // ts carries the element's textAlign (Horizontal align) so cells honor it
         border: '1px solid rgba(0,0,0,0.15)',
         padding: '2px 5px',
-        textAlign: 'left',
         verticalAlign: 'top',
         overflowWrap: 'break-word',
     };
