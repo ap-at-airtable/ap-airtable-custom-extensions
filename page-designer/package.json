@@ -1,6 +1,7 @@
 {
     "scripts": {
-        "lint": "eslint frontend"
+        "lint": "eslint frontend",
+        "build:css": "tailwindcss -c tailwind.config.js -i frontend/style.css -o frontend/compiled.css --minify"
     },
     "dependencies": {
         "@airtable/blocks": "interface-alpha",
