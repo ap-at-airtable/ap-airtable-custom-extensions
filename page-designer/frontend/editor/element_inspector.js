@@ -501,7 +501,6 @@ export function ElementInspector({
                         <ColorInput
                             value={style.backgroundColor}
                             onChange={(backgroundColor) => setStyle({backgroundColor})}
-                            allowClear
                         />
                     </Field>
                     <Field label="Padding">

@@ -88,7 +88,6 @@ export function PageSettingsPanel({page, onChangePage}) {
                     <ColorInput
                         value={page.backgroundColor}
                         onChange={(backgroundColor) => onChangePage({backgroundColor})}
-                        allowClear
                     />
                 </Field>
             </div>

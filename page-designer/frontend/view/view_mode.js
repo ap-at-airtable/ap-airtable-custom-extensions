@@ -199,6 +199,17 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                             Record {safeIndex + 1} of {records.length}
                         </span>
                     ) : null}
+                    <Button
+                        variant="default"
+                        size="sm"
+                        icon={MaximizeIcon}
+                        onClick={enterPresent}
+                        title="Present full screen (one page per record, arrow keys to move)"
+                    >
+                        Present
+                    </Button>
+                    {/* Keep the edit toggle in the same spot as edit mode's Preview
+                        button (immediately left of Print) so it doesn't jump. */}
                     {onExitPreview ? (
                         <Button
                             variant="default"
@@ -210,15 +221,6 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                             Back to editing
                         </Button>
                     ) : null}
-                    <Button
-                        variant="default"
-                        size="sm"
-                        icon={MaximizeIcon}
-                        onClick={enterPresent}
-                        title="Present full screen (one page per record, arrow keys to move)"
-                    >
-                        Present
-                    </Button>
                     <Button
                         variant="primary"
                         icon={PrinterIcon}

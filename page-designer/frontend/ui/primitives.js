@@ -239,7 +239,7 @@ export function Segmented({value, options, onChange, className, label, ...rest})
     );
 }
 
-export function ColorInput({value, onChange, className, allowClear = false, ...rest}) {
+export function ColorInput({value, onChange, className, ...rest}) {
     const trimmed = typeof value === 'string' ? value.trim() : '';
     // The native picker only holds hex; it opens at black for non-hex values.
     const safe = trimmed.startsWith('#') ? trimmed : '#000000';
@@ -272,11 +272,9 @@ export function ColorInput({value, onChange, className, allowClear = false, ...r
                 type="text"
                 value={value ?? ''}
                 onChange={(e) => onChange(e.target.value)}
-                // Fixed, compact width: it only holds a short hex/named value (fits
-                // "transparent"), so it shouldn't stretch across the whole panel.
-                className={cx(FIELD.replace('w-full', 'w-32'), 'font-mono text-xs')}
+                className={cx(FIELD, 'flex-1 font-mono text-xs')}
             />
-            {allowClear && hasColor ? (
+            {hasColor ? (
                 <button
                     type="button"
                     onClick={() => onChange('transparent')}
