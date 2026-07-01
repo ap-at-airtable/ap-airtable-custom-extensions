@@ -13,8 +13,13 @@ import {
     inputValueToIso,
 } from '../domain/editable_fields.mjs';
 import {EditIcon} from '../ui/icons.js';
+import {COARSE} from '../ui/pointer.js';
 
 const ACCENT = 'rgba(22,110,225';
+const ACCENT_SOLID = '#166ee1';
+const SAVED = '#2ea043';
+const EDIT_TEXT = '#1d1f25'; // readable input text regardless of the element's own color
+const MAX_OPTION_ROWS = 100; // cap rendered picker rows (rosters can be huge)
 const RATING_GLYPH = {star: '★', heart: '♥', thumbsUp: '👍', flag: '⚑'};
 const SAVE_ERROR = "Couldn't save — you may not have edit access, or the change was rejected.";
 
@@ -22,24 +27,28 @@ export function EditableField({field, record, table, css}) {
     const base = useBase();
     const kind = editableInputKind(field.type);
     // Percent cells are stored as decimals (0.0875) but shown as "8.75%". Edit in
-    // percent units to match the display and Airtable's own grid: show value×100,
-    // write typed/100.
+    // percent units to match the display and Airtable's own grid.
     const isPercent = field.type === 'percent';
     const frameRef = useRef(null);
     const panelRef = useRef(null);
+    const restRef = useRef(null); // resting display, for focus restoration
+    const savedTimer = useRef(null);
+    const wasActive = useRef(false);
     const [hover, setHover] = useState(false);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState('');
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState(false);
+    const [saved, setSaved] = useState(false);
     const [anchor, setAnchor] = useState(null);
+    const [panelIn, setPanelIn] = useState(false);
     const [query, setQuery] = useState('');
+    const [activeIndex, setActiveIndex] = useState(0);
 
-    // While the picker popover is open: close on an outside click, and also on
-    // scroll/resize — it's position:fixed and can't follow the scrolling, zooming
-    // canvas, so it would otherwise float detached from its field.
+    // Close the picker on outside click / scroll / resize (fixed panel can't follow
+    // the canvas) — but not when scrolling within the picker itself.
     useEffect(() => {
-        if (!anchor) return undefined;
+        if (!anchor || COARSE) return undefined; // touch uses a backdrop, not these listeners
         const close = () => {
             setAnchor(null);
             setEditing(false);
@@ -48,8 +57,6 @@ export function EditableField({field, record, table, css}) {
             if (frameRef.current?.contains(e.target) || panelRef.current?.contains(e.target)) return;
             close();
         };
-        // Close when the canvas scrolls (the fixed panel can't follow it), but NOT
-        // when scrolling within the picker's own list.
         const onScroll = (e) => {
             if (panelRef.current?.contains(e.target)) return;
             close();
@@ -64,12 +71,38 @@ export function EditableField({field, record, table, css}) {
         };
     }, [anchor]);
 
+    // Animate the popover in.
+    useEffect(() => {
+        if (!anchor) {
+            setPanelIn(false);
+            return undefined;
+        }
+        const id = setTimeout(() => setPanelIn(true), 0);
+        return () => clearTimeout(id);
+    }, [anchor]);
+
+    // Restore focus to the resting field when an edit/picker session ends, so
+    // keyboard users keep their place and can Tab onward.
+    useEffect(() => {
+        const activeNow = editing || !!anchor;
+        if (!activeNow && wasActive.current) restRef.current?.focus?.();
+        wasActive.current = activeNow;
+    }, [editing, anchor]);
+
+    // Clear any pending saved-pulse timer on unmount (cells unmount often in tables).
+    useEffect(() => () => clearTimeout(savedTimer.current), []);
+
     if (!kind || !table.hasPermissionToUpdateRecord(record, {[field.id]: undefined})) {
         return <div style={css}>{record.getCellValueAsString(field)}</div>;
     }
 
     const label = field.name;
 
+    const flashSaved = () => {
+        setSaved(true);
+        clearTimeout(savedTimer.current);
+        savedTimer.current = setTimeout(() => setSaved(false), 400);
+    };
     const commit = async (cellValue, keepOpen = false) => {
         if (!table.hasPermissionToUpdateRecord(record, {[field.id]: cellValue})) {
             setError(true);
@@ -80,6 +113,7 @@ export function EditableField({field, record, table, css}) {
         setError(false);
         try {
             await table.updateRecordAsync(record, {[field.id]: cellValue});
+            flashSaved();
         } catch (e) {
             console.warn('Page Designer: could not save field edit', e);
             setError(true);
@@ -89,77 +123,99 @@ export function EditableField({field, record, table, css}) {
         }
     };
 
-    const active = error || editing || hover || !!anchor;
-    const ringColor = error ? '#e5484d' : editing || anchor ? `${ACCENT},0.6)` : `${ACCENT},0.4)`;
-    const ringWidth = editing || anchor || error ? 1.5 : 1;
+    // On touch there's no hover, so surface the affordance whenever the field is on
+    // screen (standing, subtle) rather than hover-gated.
+    const showRest = hover || COARSE;
+    const active = error || editing || showRest || !!anchor || saved;
+    const ringColor = error
+        ? '#e5484d'
+        : saved
+          ? SAVED
+          : editing || anchor
+            ? `${ACCENT},0.65)`
+            : `${ACCENT},0.4)`;
+    const ringWidth = editing || anchor || error || saved ? 1.5 : 1;
     const frame = (children) => (
         <div
             ref={frameRef}
             onMouseEnter={() => setHover(true)}
-            onMouseLeave={() => {
-                setHover(false);
-                if (error) setError(false); // let a stale error ring clear when they move away
-            }}
+            onMouseLeave={() => setHover(false)} // keep a failed-save error ring visible
             title={error ? SAVE_ERROR : undefined}
             style={{
                 position: 'relative',
                 width: '100%',
                 boxSizing: 'border-box',
-                borderRadius: 4,
-                // Breathing room from the ring, only while it's showing, so the resting
-                // value stays flush/aligned with non-editable fields. Em-based so it
-                // scales with the field's font size (small label vs large value).
+                borderRadius: 6,
                 padding: active ? '0.25em 0.5em' : 0,
-                boxShadow: active ? `inset 0 0 0 ${ringWidth}px ${ringColor}` : 'none',
-                backgroundColor: editing ? '#ffffff' : hover ? `${ACCENT},0.05)` : 'transparent',
-                opacity: saving ? 0.6 : 1,
-                transition: 'box-shadow 0.12s ease, background-color 0.12s ease',
+                boxShadow: editing
+                    ? `inset 0 0 0 ${ringWidth}px ${ringColor}, 0 2px 12px rgba(15,23,42,0.10)`
+                    : active
+                      ? `inset 0 0 0 ${ringWidth}px ${ringColor}`
+                      : 'none',
+                backgroundColor: editing ? '#ffffff' : showRest ? `${ACCENT},0.06)` : 'transparent',
+                opacity: saving ? 0.9 : 1,
+                transition: 'box-shadow 0.1s ease, background-color 0.1s ease, opacity 0.1s ease',
             }}
         >
             {children}
         </div>
     );
 
-    const pencil = hover ? (
+    const pencil = showRest ? (
         <span
             style={{
                 position: 'absolute',
                 top: '50%',
-                right: 6,
+                right: COARSE ? 8 : 6,
                 transform: 'translateY(-50%)',
                 display: 'flex',
-                color: `${ACCENT},0.55)`,
+                color: `${ACCENT},0.5)`,
                 pointerEvents: 'none',
             }}
         >
-            <EditIcon size={11} />
+            <EditIcon size={COARSE ? 14 : 11} />
         </span>
     ) : null;
 
-    const selectStyle = {...css, width: '100%', border: 'none', background: 'transparent', cursor: 'pointer'};
+    // Resting value is keyboard-focusable so viewers can Tab between fields; Enter/
+    // Space activates (edit inline or open the picker). touch-action avoids the
+    // browser's double-tap-zoom stealing a tap-to-edit.
+    const focusableRest = (activate) => ({
+        ref: restRef,
+        tabIndex: 0,
+        role: 'button',
+        'aria-label': label,
+        onFocus: () => setHover(true),
+        onBlur: () => setHover(false),
+        onKeyDown: (e) => {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                activate();
+            }
+        },
+    });
+    const restStyle = (cursor) => ({...css, cursor, minHeight: '1em', outline: 'none', touchAction: 'manipulation'});
+    const selectStyle = {...css, color: EDIT_TEXT, width: '100%', border: 'none', background: 'transparent', cursor: 'pointer'};
 
-    // A searchable popover (portaled to <body> so it isn't clipped by the page's
-    // overflow/scale). Used for choice and — critically — collaborator pickers,
-    // which on enterprise bases can list hundreds of people.
     const openPanel = () => {
         const r = frameRef.current.getBoundingClientRect();
-        setAnchor({left: r.left, top: r.bottom + 2, width: r.width});
+        const vw = window.innerWidth;
+        const vh = window.innerHeight;
+        const panelW = Math.min(360, Math.max(200, r.width));
+        const estH = 300;
+        let left = r.left;
+        if (left + panelW > vw - 8) left = Math.max(8, vw - panelW - 8);
+        let top = r.bottom + 4;
+        if (top + estH > vh - 8 && r.top - estH > 8) top = r.top - estH - 4; // flip above
+        setAnchor({left, top, width: r.width});
         setQuery('');
+        setActiveIndex(0);
         setError(false);
         setEditing(true);
     };
     const optionLabel = (o) => o.name || o.email || '';
-    const rowStyle = (selected) => ({
-        display: 'flex',
-        alignItems: 'center',
-        padding: '5px 8px',
-        borderRadius: 4,
-        cursor: 'pointer',
-        background: selected ? `${ACCENT},0.08)` : undefined,
-        whiteSpace: 'nowrap',
-    });
     const clickToOpen = () => (
-        <div onClick={openPanel} style={{...css, cursor: 'pointer', minHeight: '1em'}}>
+        <div onClick={openPanel} {...focusableRest(openPanel)} aria-haspopup="listbox" aria-expanded={!!anchor} style={restStyle('pointer')}>
             {record.getCellValueAsString(field) || ' '}
             {pencil}
         </div>
@@ -167,71 +223,151 @@ export function EditableField({field, record, table, css}) {
     const popover = (options, {multi, selectedIds, onPick}) => {
         if (!anchor) return null;
         const q = query.trim().toLowerCase();
-        const filtered = q ? options.filter((o) => optionLabel(o).toLowerCase().includes(q)) : options;
+        const all = q ? options.filter((o) => optionLabel(o).toLowerCase().includes(q)) : options;
+        const shown = all.slice(0, MAX_OPTION_ROWS);
+        const pickActive = () => {
+            if (shown[activeIndex]) onPick(shown[activeIndex].id);
+        };
+        const closePanel = () => {
+            setAnchor(null);
+            setEditing(false);
+        };
+        const panelStyle = COARSE
+            ? {
+                  position: 'fixed',
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  maxHeight: '78vh',
+                  background: '#fff',
+                  borderTopLeftRadius: 16,
+                  borderTopRightRadius: 16,
+                  boxShadow: '0 -6px 28px rgba(15,23,42,0.28)',
+                  zIndex: 10000,
+                  overflow: 'hidden',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: 15,
+                  color: EDIT_TEXT,
+                  transform: panelIn ? 'none' : 'translateY(100%)',
+                  transition: 'transform 0.18s ease',
+              }
+            : {
+                  position: 'fixed',
+                  left: anchor.left,
+                  top: anchor.top,
+                  minWidth: Math.max(200, anchor.width),
+                  maxWidth: 360,
+                  background: '#fff',
+                  borderRadius: 10,
+                  boxShadow: '0 10px 34px rgba(15,23,42,0.18), 0 2px 8px rgba(15,23,42,0.08)',
+                  zIndex: 10000,
+                  overflow: 'hidden',
+                  fontFamily: 'Inter, sans-serif',
+                  fontSize: 13,
+                  color: EDIT_TEXT,
+                  opacity: panelIn ? 1 : 0,
+                  transform: panelIn ? 'none' : 'translateY(-4px) scale(0.985)',
+                  transformOrigin: 'top center',
+                  transition: 'opacity 0.13s ease, transform 0.13s ease',
+              };
         return createPortal(
-            <div
-                ref={panelRef}
-                style={{
-                    position: 'fixed',
-                    left: anchor.left,
-                    top: anchor.top,
-                    minWidth: Math.max(200, anchor.width),
-                    maxWidth: 360,
-                    background: '#fff',
-                    border: '1px solid rgba(0,0,0,0.15)',
-                    borderRadius: 6,
-                    boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
-                    zIndex: 10000,
-                    overflow: 'hidden',
-                    fontFamily: 'Inter, sans-serif',
-                    fontSize: 13,
-                    color: '#1d1f25',
-                }}
-            >
-                <input
-                    autoFocus
-                    value={query}
-                    onChange={(e) => setQuery(e.target.value)}
-                    placeholder="Search…"
-                    style={{
-                        width: '100%',
-                        boxSizing: 'border-box',
-                        padding: '6px 8px',
-                        border: 'none',
-                        borderBottom: '1px solid rgba(0,0,0,0.1)',
-                        outline: 'none',
-                        fontFamily: 'inherit',
-                        fontSize: 13,
-                    }}
-                />
-                <div style={{maxHeight: 220, overflowY: 'auto', padding: 4}}>
-                    {!multi ? (
-                        <div onClick={() => onPick(null)} style={rowStyle(false)}>
-                            —
+            <>
+                {COARSE ? (
+                    <div
+                        onClick={closePanel}
+                        style={{position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.35)', zIndex: 9999}}
+                    />
+                ) : null}
+                <div ref={panelRef} style={panelStyle}>
+                    <div style={{position: 'relative', padding: COARSE ? 12 : 8, borderBottom: '1px solid rgba(0,0,0,0.07)'}}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="rgba(15,23,42,0.4)" strokeWidth="2.2" strokeLinecap="round" style={{position: 'absolute', left: COARSE ? 22 : 16, top: '50%', transform: 'translateY(-50%)'}}>
+                            <circle cx="11" cy="11" r="7" />
+                            <path d="m20 20-3-3" />
+                        </svg>
+                        <input
+                            autoFocus={!COARSE}
+                            value={query}
+                            aria-label={`Search ${label}`}
+                            role="combobox"
+                            aria-expanded="true"
+                            onChange={(e) => {
+                                setQuery(e.target.value);
+                                setActiveIndex(0);
+                            }}
+                            onKeyDown={(e) => {
+                                if (e.key === 'Escape') {
+                                    closePanel();
+                                } else if (e.key === 'ArrowDown') {
+                                    e.preventDefault();
+                                    setActiveIndex((i) => Math.min(i + 1, shown.length - 1));
+                                } else if (e.key === 'ArrowUp') {
+                                    e.preventDefault();
+                                    setActiveIndex((i) => Math.max(i - 1, 0));
+                                } else if (e.key === 'Enter') {
+                                    e.preventDefault();
+                                    pickActive();
+                                }
+                            }}
+                            placeholder="Search…"
+                            style={{width: '100%', boxSizing: 'border-box', padding: COARSE ? '10px 10px 10px 34px' : '6px 8px 6px 28px', border: 'none', borderRadius: 6, background: 'rgba(15,23,42,0.05)', outline: 'none', fontFamily: 'inherit', fontSize: COARSE ? 15 : 13, color: EDIT_TEXT}}
+                        />
+                    </div>
+                    <div role="listbox" aria-label={label} style={{maxHeight: COARSE ? '62vh' : 240, overflowY: 'auto', padding: 4}}>
+                    {!multi
+                        ? row({id: '__none__', label: '—', selected: !selectedIds || selectedIds.size === 0, multi, active: false, onClick: () => onPick(null)})
+                        : null}
+                    {shown.length === 0 ? (
+                        <div style={{padding: '8px', color: '#6b7280'}}>No matches</div>
+                    ) : (
+                        shown.map((o, i) =>
+                            row({
+                                id: o.id,
+                                label: optionLabel(o),
+                                selected: selectedIds?.has(o.id),
+                                active: i === activeIndex,
+                                multi,
+                                onClick: () => onPick(o.id),
+                                onHover: () => setActiveIndex(i),
+                            }),
+                        )
+                    )}
+                    {all.length > shown.length ? (
+                        <div style={{padding: '6px 8px', color: '#6b7280', fontSize: 12}}>
+                            Showing first {MAX_OPTION_ROWS} — refine your search.
                         </div>
                     ) : null}
-                    {filtered.length === 0 ? (
-                        <div style={{padding: '6px 8px', color: '#6b7280'}}>No matches</div>
-                    ) : (
-                        filtered.map((o) => (
-                            <div key={o.id} onClick={() => onPick(o.id)} style={rowStyle(selectedIds?.has(o.id))}>
-                                {multi ? (
-                                    <input
-                                        type="checkbox"
-                                        readOnly
-                                        checked={selectedIds.has(o.id)}
-                                        style={{marginRight: 8}}
-                                    />
-                                ) : null}
-                                <span style={{overflow: 'hidden', textOverflow: 'ellipsis'}}>{optionLabel(o)}</span>
-                            </div>
-                        ))
-                    )}
+                    </div>
                 </div>
-            </div>,
+            </>,
             document.body,
         );
     };
+    const row = ({id, label: text, selected, active: isActive, multi, onClick, onHover}) => (
+        <div
+            key={id}
+            role="option"
+            aria-selected={!!selected}
+            onClick={onClick}
+            onMouseEnter={onHover}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 8,
+                padding: COARSE ? '12px 12px' : '6px 8px',
+                borderRadius: 6,
+                cursor: 'pointer',
+                background: isActive ? 'rgba(15,23,42,0.06)' : 'transparent',
+            }}
+        >
+            {multi ? <input type="checkbox" readOnly checked={!!selected} style={{accentColor: ACCENT_SOLID}} /> : null}
+            <span style={{flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{text}</span>
+            {!multi && selected ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={ACCENT_SOLID} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M20 6 9 17l-5-5" />
+                </svg>
+            ) : null}
+        </div>
+    );
 
     // --- Direct-toggle controls -------------------------------------------------
 
@@ -245,7 +381,7 @@ export function EditableField({field, record, table, css}) {
                     checked={checked}
                     disabled={saving}
                     onChange={(e) => commit(e.target.checked ? true : null)}
-                    style={{cursor: 'pointer'}}
+                    style={{cursor: 'pointer', accentColor: ACCENT_SOLID, width: '1em', height: '1em'}}
                 />
             </div>,
         );
@@ -256,7 +392,7 @@ export function EditableField({field, record, table, css}) {
         const max = opts.max || 5;
         const glyph = RATING_GLYPH[opts.icon] || '★';
         const value = Number(record.getCellValue(field)) || 0;
-        const setRating = (n) => commit(n === value ? null : n); // click the current level to clear
+        const setRating = (n) => commit(n === value ? null : n);
         return frame(
             <div role="group" aria-label={label} style={{...css, display: 'flex', gap: '0.1em'}}>
                 {Array.from({length: max}, (_, i) => i + 1).map((n) => (
@@ -265,6 +401,7 @@ export function EditableField({field, record, table, css}) {
                         role="button"
                         tabIndex={0}
                         aria-label={`${n} of ${max}`}
+                        aria-pressed={n <= value}
                         onClick={() => setRating(n)}
                         onKeyDown={(e) => {
                             if (e.key === 'Enter' || e.key === ' ') {
@@ -272,7 +409,7 @@ export function EditableField({field, record, table, css}) {
                                 setRating(n);
                             }
                         }}
-                        style={{cursor: 'pointer', color: n <= value ? '#fcb400' : 'rgba(0,0,0,0.2)'}}
+                        style={{cursor: 'pointer', color: n <= value ? '#fcb400' : 'rgba(15,23,42,0.18)'}}
                     >
                         {glyph}
                     </span>
@@ -309,13 +446,13 @@ export function EditableField({field, record, table, css}) {
     if (kind === 'collaborator') {
         const people = base.activeCollaborators || [];
         const current = record.getCellValue(field);
-        // Keep the current assignee selectable even if they're not in the roster.
         const options = current && !people.some((p) => p.id === current.id) ? [current, ...people] : people;
         return frame(
             <>
                 {clickToOpen()}
                 {popover(options, {
                     multi: false,
+                    selectedIds: current ? new Set([current.id]) : new Set(),
                     onPick: (id) => {
                         commit(id ? {id} : null);
                         setAnchor(null);
@@ -329,15 +466,13 @@ export function EditableField({field, record, table, css}) {
 
     if (kind === 'date' || kind === 'datetime') {
         if (!editing) {
+            const start = () => {
+                setDraft(isoToInputValue(kind, record.getCellValue(field)));
+                setError(false);
+                setEditing(true);
+            };
             return frame(
-                <div
-                    onClick={() => {
-                        setDraft(isoToInputValue(kind, record.getCellValue(field)));
-                        setError(false);
-                        setEditing(true);
-                    }}
-                    style={{...css, cursor: 'pointer', minHeight: '1em'}}
-                >
+                <div onClick={start} {...focusableRest(start)} style={restStyle('pointer')}>
                     {record.getCellValueAsString(field) || ' '}
                     {pencil}
                 </div>,
@@ -356,7 +491,7 @@ export function EditableField({field, record, table, css}) {
                     if (e.key === 'Escape') setEditing(false);
                     else if (e.key === 'Enter') commit(inputValueToIso(kind, draft));
                 }}
-                style={{...css, width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', padding: 0}}
+                style={{...css, color: EDIT_TEXT, width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', padding: 0}}
             />,
         );
     }
@@ -370,13 +505,9 @@ export function EditableField({field, record, table, css}) {
                 : base.activeCollaborators || [];
         const current = record.getCellValue(field) || [];
         const optionIds = new Set(baseOptions.map((o) => o.id));
-        // Show already-set values that aren't in the roster/choices so they stay
-        // visible and de-selectable rather than silently disappearing.
         const options = [...baseOptions, ...current.filter((c) => !optionIds.has(c.id))];
         const currentIds = new Set(current.map((x) => x.id));
         const toggle = (id) => {
-            // Read the freshest cell value (writes apply optimistically) so quick
-            // successive toggles compose instead of racing on a stale snapshot.
             const cur = record.getCellValue(field) || [];
             const next = cur.some((x) => x.id === id) ? cur.filter((x) => x.id !== id) : [...cur, {id}];
             commit(next.map((x) => ({id: x.id})), true);
@@ -392,16 +523,14 @@ export function EditableField({field, record, table, css}) {
     // --- Text / multiline / number: click the value to edit it in place ---------
 
     if (!editing) {
+        const start = () => {
+            const v = record.getCellValue(field);
+            setDraft(v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v));
+            setError(false);
+            setEditing(true);
+        };
         return frame(
-            <div
-                onClick={() => {
-                    const v = record.getCellValue(field);
-                    setDraft(v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v));
-                    setError(false);
-                    setEditing(true);
-                }}
-                style={{...css, cursor: 'text', minHeight: '1em'}}
-            >
+            <div onClick={start} {...focusableRest(start)} style={restStyle('text')}>
                 {record.getCellValueAsString(field) || ' '}
                 {pencil}
             </div>,
@@ -409,7 +538,6 @@ export function EditableField({field, record, table, css}) {
     }
 
     const commitText = () => {
-        // Don't clear the cell when a typed number is unparseable — revert instead.
         if (kind === 'number' && draft.trim() !== '' && !Number.isFinite(Number(draft))) {
             setEditing(false);
             return;
@@ -428,6 +556,7 @@ export function EditableField({field, record, table, css}) {
     };
     const inputStyle = {
         ...css,
+        color: EDIT_TEXT,
         width: '100%',
         boxSizing: 'border-box',
         border: 'none',
@@ -438,29 +567,9 @@ export function EditableField({field, record, table, css}) {
     };
     return frame(
         kind === 'textarea' ? (
-            <textarea
-                aria-label={label}
-                autoFocus
-                rows={3}
-                value={draft}
-                disabled={saving}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={commitText}
-                onKeyDown={onKeyDown}
-                style={inputStyle}
-            />
+            <textarea aria-label={label} autoFocus rows={3} value={draft} disabled={saving} onChange={(e) => setDraft(e.target.value)} onBlur={commitText} onKeyDown={onKeyDown} style={inputStyle} />
         ) : (
-            <input
-                aria-label={label}
-                autoFocus
-                type={kind === 'number' ? 'number' : 'text'}
-                value={draft}
-                disabled={saving}
-                onChange={(e) => setDraft(e.target.value)}
-                onBlur={commitText}
-                onKeyDown={onKeyDown}
-                style={inputStyle}
-            />
+            <input aria-label={label} autoFocus type={kind === 'number' ? 'number' : 'text'} value={draft} disabled={saving} onChange={(e) => setDraft(e.target.value)} onBlur={commitText} onKeyDown={onKeyDown} style={inputStyle} />
         ),
     );
 }

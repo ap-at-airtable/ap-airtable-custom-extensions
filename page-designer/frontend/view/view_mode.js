@@ -11,6 +11,7 @@ import {Button, Segmented} from '../ui/primitives.js';
 import {PrinterIcon, EmptyIcon, EditIcon, MaximizeIcon, CloseIcon} from '../ui/icons.js';
 import {useContainerWidth, useContainerSize} from '../ui/use_container_width.js';
 import {ZoomControl} from '../ui/zoom_control.js';
+import {isTextEntryTarget} from '../ui/dom.js';
 
 function ChevronLeft({size = 16}) {
     return (
@@ -51,6 +52,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const [zoom, setZoom] = useState(null);
     const [presenting, setPresenting] = useState(false);
     const rootRef = useRef(null);
+    const scaleRef = useRef(1);
     const [stageRef, stageSize] = useContainerSize();
 
     const pageCount = pages.length;
@@ -97,10 +99,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     useEffect(() => {
         if (continuous) return undefined;
         const onKeyDown = (e) => {
-            const tag = e.target?.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) {
-                return;
-            }
+            if (isTextEntryTarget(e.target)) return; // don't hijack keys while editing a field
             if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
                 setCurrentIndex((i) => Math.max(i - 1, 0));
             } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || (presenting && e.key === ' ')) {
@@ -115,6 +114,43 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
         return () => window.removeEventListener('keydown', onKeyDown);
     }, [total, continuous, presenting]);
 
+    // Pinch-to-zoom on touch: the extension runs in an iframe with no native visual
+    // viewport, so drive the existing zoom state from a two-finger gesture.
+    useEffect(() => {
+        const node = scrollRef.current;
+        if (!node) return undefined;
+        let startDist = 0;
+        let startScale = 1;
+        let pinching = false;
+        const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const onStart = (e) => {
+            if (e.touches.length === 2) {
+                pinching = true;
+                startDist = dist(e.touches);
+                startScale = scaleRef.current;
+            }
+        };
+        const onMove = (e) => {
+            if (pinching && e.touches.length === 2 && startDist > 0) {
+                e.preventDefault();
+                setZoom(Math.max(0.25, Math.min(3, startScale * (dist(e.touches) / startDist))));
+            }
+        };
+        const onEnd = (e) => {
+            if (e.touches.length < 2) pinching = false;
+        };
+        node.addEventListener('touchstart', onStart, {passive: false});
+        node.addEventListener('touchmove', onMove, {passive: false});
+        node.addEventListener('touchend', onEnd);
+        node.addEventListener('touchcancel', onEnd);
+        return () => {
+            node.removeEventListener('touchstart', onStart);
+            node.removeEventListener('touchmove', onMove);
+            node.removeEventListener('touchend', onEnd);
+            node.removeEventListener('touchcancel', onEnd);
+        };
+    }, [total, scrollRef]);
+
     const totalElements = pages.reduce((n, e) => n + (e.layout.order ? e.layout.order.length : 0), 0);
     const continuousCapped = total > MAX_CONTINUOUS_SHEETS;
     const printCapped = total > MAX_PRINT_SHEETS;
@@ -124,6 +160,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const fitScale =
         containerWidth > 0 ? Math.max(0.1, Math.min(1, (containerWidth - 48) / pageWidth)) : 0.5;
     const scale = zoom != null ? zoom : fitScale;
+    scaleRef.current = scale; // read by the pinch handler without re-subscribing
     const applyZoom = (next) => setZoom(Math.max(0.25, Math.min(3, next)));
 
     const PRESENT_PADDING = 80;
@@ -257,7 +294,11 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
             ) : null}
 
             <div className="relative flex min-h-0 flex-1 flex-col">
-                <div ref={scrollRef} className="pd-desk pd-screen-only flex-1 overflow-auto">
+                <div
+                    ref={scrollRef}
+                    className="pd-desk pd-screen-only flex-1 overflow-auto"
+                    style={{touchAction: 'pan-x pan-y'}}
+                >
                     <div className="flex min-h-full w-max min-w-full flex-col items-center gap-4 p-6">
                         {visibleSheets.map((sheet) => (
                             <ScaledPage key={sheet.key} page={page} scale={scale}>
