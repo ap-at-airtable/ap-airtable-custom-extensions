@@ -40,6 +40,8 @@ import {
     RedoIcon,
     PlusIcon,
     TrashIcon,
+    ChevronUpIcon,
+    ChevronDownIcon,
     FieldIcon,
 } from '../ui/icons.js';
 import {ZoomControl} from '../ui/zoom_control.js';
@@ -154,6 +156,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         setDragOverride(null);
         // Keep the same page active: shift down if we removed one before it, else clamp.
         setPageIndex((cur) => (i < cur ? cur - 1 : Math.min(cur, config.pages.length - 2)));
+    };
+    // Move a page one slot (to = from ± 1). Keep the active page focused through the swap.
+    const handleMovePage = (from, to) => {
+        setDragOverride(null);
+        config.movePage(from, to).then(() => setError(null), onSaveError);
+        setPageIndex((cur) => (cur === from ? to : cur === to ? from : cur));
     };
 
     const handleAdd = (kind) => {
@@ -485,15 +493,37 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                                 Page {i + 1}
                                             </span>
                                             {multiPage ? (
-                                                <button
-                                                    type="button"
-                                                    aria-label={`Delete page ${i + 1}`}
-                                                    title="Delete page"
-                                                    onClick={() => handleRemovePage(i)}
-                                                    className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
-                                                >
-                                                    <TrashIcon size={15} />
-                                                </button>
+                                                <div className="flex items-center gap-0.5">
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Move page ${i + 1} up`}
+                                                        title="Move up"
+                                                        disabled={i === 0}
+                                                        onClick={() => handleMovePage(i, i - 1)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        <ChevronUpIcon size={15} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Move page ${i + 1} down`}
+                                                        title="Move down"
+                                                        disabled={i === config.pages.length - 1}
+                                                        onClick={() => handleMovePage(i, i + 1)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        <ChevronDownIcon size={15} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Delete page ${i + 1}`}
+                                                        title="Delete page"
+                                                        onClick={() => handleRemovePage(i)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
+                                                    >
+                                                        <TrashIcon size={15} />
+                                                    </button>
+                                                </div>
                                             ) : null}
                                         </div>
                                         <EditorCanvas

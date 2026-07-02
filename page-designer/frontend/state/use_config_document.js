@@ -124,6 +124,21 @@ export function useConfigDocument() {
         [pushUndo, writePages],
     );
 
+    const movePage = useCallback(
+        (from, to) => {
+            const pages = docRef.current.pages;
+            if (to < 0 || to >= pages.length || from === to) {
+                return Promise.resolve();
+            }
+            const next = pages.slice();
+            const [moved] = next.splice(from, 1);
+            next.splice(to, 0, moved);
+            pushUndo();
+            return writePages(next);
+        },
+        [pushUndo, writePages],
+    );
+
     const restore = useCallback(
         (snap) =>
             globalConfig.setPathsAsync([
@@ -165,6 +180,7 @@ export function useConfigDocument() {
         setPageGeometry,
         addPage,
         removePage,
+        movePage,
         undo,
         redo,
         canUndo: past.current.length > 0,

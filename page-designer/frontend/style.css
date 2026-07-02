@@ -35,12 +35,12 @@
    it lives here. */
 .pd-desk {
     background-color: rgb(242 244 248);
-    background-image: radial-gradient(circle, rgba(0, 0, 0, 0.06) 1px, transparent 1px);
-    background-size: 18px 18px;
+    background-image: radial-gradient(circle, rgba(0, 0, 0, 0.06) 1.5px, transparent 1.5px);
+    background-size: 36px 36px;
 }
 .dark .pd-desk {
     background-color: rgb(17 18 21);
-    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1px, transparent 1px);
+    background-image: radial-gradient(circle, rgba(255, 255, 255, 0.05) 1.5px, transparent 1.5px);
 }
 
 /* No native number spinners anywhere — including the inline number editor in view

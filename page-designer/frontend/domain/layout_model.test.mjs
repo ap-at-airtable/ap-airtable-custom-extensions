@@ -50,7 +50,6 @@ test('hydrateLayout backfills missing style keys and defaults', () => {
     const layout = hydrateLayout(raw);
     assert.equal(layout.elementsById.a.style.fontSize, 40); // preserved
     assert.equal(layout.elementsById.a.style.color, '#1d1f25'); // backfilled default
-    assert.equal(layout.elementsById.a.rules, null); // field added later
     assert.equal(layout.elementsById.a.x, 5);
 });
 

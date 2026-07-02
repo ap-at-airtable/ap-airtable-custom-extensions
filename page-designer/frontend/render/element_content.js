@@ -1,13 +1,13 @@
 // Dispatches an element to its content renderer. Pure presentation: takes an
 // element plus the (optional) record + table and renders the inner content only.
-// Positioning/rotation is applied by PageCanvas via elementBoxStyle. Dynamic
-// content (merge tokens, value formatting, conditional color) resolves here.
+// Positioning/rotation is applied by PageCanvas via elementBoxStyle. Merge tokens
+// ({Field name}) resolve here.
 
 import {memo} from 'react';
 import {FieldType} from '@airtable/blocks/interface/models';
 import {ElementKind, LinkedRecordDisplay} from '../domain/element_types.mjs';
 import {extractLinkedRecords, extractSelectChoices} from '../domain/cell_value_helpers.mjs';
-import {renderTemplate, evaluateCondition} from '../domain/dynamic_content.mjs';
+import {renderTemplate} from '../domain/dynamic_content.mjs';
 import {textStyle} from './geometry_style.js';
 import {ImageElement} from './image_element.js';
 import {BarcodeElement} from './barcode_element.js';
@@ -15,25 +15,8 @@ import {LinkedRecordTable} from './linked_record_table.js';
 import {EditableField} from './editable_field.js';
 import {ChoicePill} from './select_pill.js';
 import {SelectStepper} from './select_stepper.js';
+import {RatingDisplay, CheckboxDisplay} from './field_display.js';
 import {editableInputKind} from '../domain/editable_fields.mjs';
-
-// Evaluates an element's conditional rules against the current record. Returns
-// whether it should show and an optional text-color override. No rules / no
-// record (editor preview) = always visible, base color.
-export function resolveElementRules(element, record, table) {
-    const rules = element.rules;
-    if (!rules || !record) {
-        return {visible: true, colorOverride: null};
-    }
-    const valueOf = (cond) => {
-        const f = cond && cond.fieldId ? table.getFieldByIdIfExists(cond.fieldId) : null;
-        return f ? record.getCellValueAsString(f) : '';
-    };
-    const visible = rules.visibility ? evaluateCondition(rules.visibility, valueOf(rules.visibility)) : true;
-    const colorOverride =
-        rules.color && evaluateCondition(rules.color, valueOf(rules.color)) ? rules.color.color : null;
-    return {visible, colorOverride};
-}
 
 function DeletedField() {
     return (
@@ -80,10 +63,12 @@ function SelectPills({field, record, css}) {
     );
 }
 
-function FieldText({element, css, record, table, interactive}) {
+function FieldText({element, css, record, table, interactive, editor}) {
     const field = element.fieldId ? table.getFieldByIdIfExists(element.fieldId) : null;
     if (element.fieldId && !field) {
-        return <DeletedField />;
+        // A bound field was deleted. Flag it in the editor so the builder can re-bind;
+        // published viewers/print see nothing rather than a red error box.
+        return editor ? <DeletedField /> : null;
     }
     const label = element.style.showFieldLabel && field ? field.name : null;
     const isLinked = field && field.type === FieldType.MULTIPLE_RECORD_LINKS;
@@ -94,6 +79,10 @@ function FieldText({element, css, record, table, interactive}) {
     const isSelectPill = selectMode === 'pill';
     // Stepper is single-select only.
     const isStepper = selectMode === 'stepper' && field.type === FieldType.SINGLE_SELECT;
+    // Field types that render a glyph (not text) when not being edited inline.
+    const fieldKind = field ? editableInputKind(field.type) : null;
+    const isRating = fieldKind === 'rating';
+    const isCheckbox = fieldKind === 'checkbox';
     const isInlineEditable =
         interactive && record && field && element.style.editable && editableInputKind(field.type);
 
@@ -136,6 +125,10 @@ function FieldText({element, css, record, table, interactive}) {
                 track={element.style.stepperTrackColor}
             />
         );
+    } else if (isRating) {
+        body = <RatingDisplay field={field} record={record} css={css} />;
+    } else if (isCheckbox) {
+        body = <CheckboxDisplay field={field} record={record} css={css} />;
     } else {
         // Inherit the field's own formatting (currency symbol, percent, decimals,
         // date format) via getCellValueAsString. No record = editor preview: show the
@@ -194,11 +187,11 @@ function Line({element}) {
 
 // Memoized: layout ops preserve element identity for untouched elements, so a
 // drag/edit only re-renders the element that actually changed (not all of them).
-export const ElementContent = memo(function ElementContent({element, record, table, colorOverride, eagerImages, interactive}) {
-    const css = textStyle(colorOverride ? {...element.style, color: colorOverride} : element.style);
+export const ElementContent = memo(function ElementContent({element, record, table, eagerImages, interactive, editor}) {
+    const css = textStyle(element.style);
     switch (element.kind) {
         case ElementKind.FIELD:
-            return <FieldText element={element} css={css} record={record} table={table} interactive={interactive} />;
+            return <FieldText element={element} css={css} record={record} table={table} interactive={interactive} editor={editor} />;
         case ElementKind.TEXT:
             return <StaticText element={element} css={css} record={record} table={table} />;
         case ElementKind.IMAGE:

@@ -122,6 +122,16 @@ export const ChevronRightIcon = (p) => (
         <path d="M9 6l6 6-6 6" />
     </Svg>
 );
+export const ChevronUpIcon = (p) => (
+    <Svg {...p}>
+        <path d="M6 15l6-6 6 6" />
+    </Svg>
+);
+export const ChevronDownIcon = (p) => (
+    <Svg {...p}>
+        <path d="M6 9l6 6 6-6" />
+    </Svg>
+);
 export const MaximizeIcon = (p) => (
     <Svg {...p}>
         <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M8 21H5a2 2 0 0 1-2-2v-3M16 21h3a2 2 0 0 0 2-2v-3" />

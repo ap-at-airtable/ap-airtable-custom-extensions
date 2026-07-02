@@ -16,13 +16,13 @@ import {EditIcon} from '../ui/icons.js';
 import {COARSE} from '../ui/pointer.js';
 import {ChoicePill} from './select_pill.js';
 import {SelectStepper} from './select_stepper.js';
+import {RATING_GLYPH, RatingDisplay, CheckboxDisplay} from './field_display.js';
 
 const ACCENT = 'rgba(22,110,225';
 const ACCENT_SOLID = '#166ee1';
 const SAVED = '#2ea043';
 const EDIT_TEXT = '#1d1f25'; // readable input text regardless of the element's own color
 const MAX_OPTION_ROWS = 100; // cap rendered picker rows (rosters can be huge)
-const RATING_GLYPH = {star: '★', heart: '♥', thumbsUp: '👍', flag: '⚑'};
 const SAVE_ERROR = "Couldn't save — you may not have edit access, or the change was rejected.";
 
 export function EditableField({
@@ -104,7 +104,11 @@ export function EditableField({
     // Clear any pending saved-pulse timer on unmount (cells unmount often in tables).
     useEffect(() => () => clearTimeout(savedTimer.current), []);
 
+    // No inline-edit permission (or unsupported kind): render read-only. Glyph field
+    // types keep their visual (stars / checkbox) instead of falling back to raw text.
     if (!kind || !table.hasPermissionToUpdateRecord(record, {[field.id]: undefined})) {
+        if (kind === 'rating') return <RatingDisplay field={field} record={record} css={css} />;
+        if (kind === 'checkbox') return <CheckboxDisplay field={field} record={record} css={css} />;
         return <div style={css}>{record.getCellValueAsString(field)}</div>;
     }
 

@@ -30,13 +30,15 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 
 ## Local development
 
+This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`). That SDK is pre-release, so the exact build is pinned in `package-lock.json` — install with `npm ci` for a reproducible tree, and expect occasional API drift if you later upgrade.
+
 ```bash
 cd page-designer
-npm install
-block run
+npm ci        # reproducible install (pins the preview SDK); use `npm install` to update
+block run     # bundles + serves the extension locally
 ```
 
-Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) and an extension registered in your base.
+Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) and a custom extension registered for an interface page in your base (create one, point it at your `block run` dev build, and `block release` to publish). If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`.
 
 ## Notes
 

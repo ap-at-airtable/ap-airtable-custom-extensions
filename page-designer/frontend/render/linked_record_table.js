@@ -14,6 +14,10 @@ import {EditableField} from './editable_field.js';
 import {TrashIcon} from '../ui/icons.js';
 import {isTextEntryTarget} from '../ui/dom.js';
 
+// Hard cap on rendered rows so a record linked to thousands of others can't hang
+// the render / blow up the DOM. Overflow is surfaced as a "+N more" row.
+const MAX_TABLE_ROWS = 100;
+
 export function LinkedRecordTable({element, field, record, table, editable}) {
     const base = useBase();
     const linkedTableId = field.config && field.config.options ? field.config.options.linkedTableId : null;
@@ -66,7 +70,9 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
     }
 
     const recordById = new Map(linkedRecords.map((r) => [r.id, r]));
-    const refs = record ? extractLinkedRecords(record.getCellValue(field)) : [];
+    const allRefs = record ? extractLinkedRecords(record.getCellValue(field)) : [];
+    const refs = allRefs.slice(0, MAX_TABLE_ROWS);
+    const hiddenRows = allRefs.length - refs.length;
     const fractions = columnFractions(columns.map((c) => c.id), element.linkedColumnWidths);
 
     const cellStyle = {
@@ -96,8 +102,8 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
     // Right-click (or long-press on touch) a row → a small menu to delete it.
     const openMenu = (id, x, y) => {
         if (!canDeleteRows) return;
-        const w = 160;
-        const h = 48;
+        const w = 220;
+        const h = 90;
         setMenu({
             id,
             x: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
@@ -214,6 +220,16 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
                             ))}
                         </tr>
                     )}
+                    {hiddenRows > 0 ? (
+                        <tr>
+                            <td
+                                colSpan={columns.length}
+                                style={{...cellStyle, textAlign: 'center', opacity: 0.6}}
+                            >
+                                +{hiddenRows} more
+                            </td>
+                        </tr>
+                    ) : null}
                     {canCreate ? (
                         <tr>
                             <td colSpan={columns.length} style={{...cellStyle, padding: 0}}>
@@ -261,36 +277,56 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
                                   borderRadius: 8,
                                   boxShadow: '0 8px 28px rgba(15,23,42,0.22), 0 2px 6px rgba(15,23,42,0.08)',
                                   padding: 4,
-                                  minWidth: 150,
+                                  width: 220,
                                   fontFamily: 'Inter, sans-serif',
                                   fontSize: 13,
                                   color: '#1d1f25',
                               }}
                           >
-                              <button
-                                  type="button"
-                                  onClick={() => {
-                                      const id = menu.id;
-                                      setMenu(null);
-                                      deleteRow(id);
-                                  }}
-                                  style={{
-                                      display: 'flex',
-                                      alignItems: 'center',
-                                      gap: 8,
-                                      width: '100%',
-                                      padding: '8px 10px',
-                                      border: 'none',
-                                      background: 'transparent',
-                                      cursor: 'pointer',
-                                      color: '#b42318',
-                                      font: 'inherit',
-                                      borderRadius: 6,
-                                      textAlign: 'left',
-                                  }}
-                              >
-                                  <TrashIcon size={14} /> Delete row
-                              </button>
+                              <div style={{display: 'flex', gap: 8, padding: '8px 8px 6px'}}>
+                                  <span style={{color: '#b42318', flex: 'none', paddingTop: 1}}>
+                                      <TrashIcon size={16} />
+                                  </span>
+                                  <span style={{fontSize: 12, lineHeight: 1.35, color: '#475467'}}>
+                                      Delete this record? This removes it from the base, not just this
+                                      list.
+                                  </span>
+                              </div>
+                              <div style={{display: 'flex', gap: 6, padding: '0 6px 6px', justifyContent: 'flex-end'}}>
+                                  <button
+                                      type="button"
+                                      onClick={() => setMenu(null)}
+                                      style={{
+                                          padding: '5px 10px',
+                                          border: '1px solid rgba(0,0,0,0.15)',
+                                          background: '#fff',
+                                          cursor: 'pointer',
+                                          font: 'inherit',
+                                          borderRadius: 6,
+                                      }}
+                                  >
+                                      Cancel
+                                  </button>
+                                  <button
+                                      type="button"
+                                      onClick={() => {
+                                          const id = menu.id;
+                                          setMenu(null);
+                                          deleteRow(id);
+                                      }}
+                                      style={{
+                                          padding: '5px 10px',
+                                          border: 'none',
+                                          background: '#b42318',
+                                          color: '#fff',
+                                          cursor: 'pointer',
+                                          font: 'inherit',
+                                          borderRadius: 6,
+                                      }}
+                                  >
+                                      Delete
+                                  </button>
+                              </div>
                           </div>
                       </div>,
                       document.body,

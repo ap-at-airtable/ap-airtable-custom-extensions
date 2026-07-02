@@ -126,8 +126,6 @@ export function makeElement({id, kind, x, y, fieldId = null, overrides = {}}) {
         linkedColumns: [],
         // Per-column width fractions (fieldId -> fraction); missing = equal share.
         linkedColumnWidths: {},
-        // Conditional rules ({visibility, color}); null = always shown, base color.
-        rules: null,
         style: defaultStyle(),
     };
     return {...base, ...overrides, style: {...base.style, ...(overrides.style ?? {})}};
