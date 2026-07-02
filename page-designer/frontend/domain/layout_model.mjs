@@ -124,6 +124,63 @@ export function sendBackward(layout, id) {
     return idx <= 0 ? layout : reorder(layout, id, idx - 1);
 }
 
+// Read-time normalizer + v1→v2 migration for the pages array. v2 stores
+// `pages: [{backgroundColor, layout}]`; v1 stored a single `layout` + a page-level
+// background, which becomes a one-entry array. Always returns at least one page.
+export function hydratePages(rawPages, legacyLayout, legacyBackground) {
+    const toEntry = (bg, layout) => ({
+        backgroundColor: typeof bg === 'string' ? bg : '#ffffff',
+        layout: hydrateLayout(layout),
+    });
+    if (Array.isArray(rawPages) && rawPages.length > 0) {
+        const entries = rawPages
+            .filter((p) => p && typeof p === 'object')
+            .map((p) => toEntry(p.backgroundColor, p.layout));
+        return entries.length > 0 ? entries : [toEntry(undefined, null)];
+    }
+    return [toEntry(legacyBackground, legacyLayout)];
+}
+
+// Normalized column widths (fractions summing to 1) for the given column ids. A
+// missing/invalid entry defaults to an equal share, and the result is renormalized
+// so it always sums to 1 even after columns are added/removed. Pure/testable.
+export function columnFractions(columnIds, widths) {
+    const n = columnIds.length;
+    if (n === 0) {
+        return [];
+    }
+    const w = widths || {};
+    const raw = columnIds.map((id) => (typeof w[id] === 'number' && w[id] > 0 ? w[id] : 1 / n));
+    const sum = raw.reduce((a, b) => a + b, 0);
+    return sum > 0 ? raw.map((v) => v / sum) : columnIds.map(() => 1 / n);
+}
+
+// Non-overlapping positions for `count` equal-size boxes: packed top-to-bottom
+// from the top-left margin, wrapping into the next column when a column is full.
+// Used when adding several elements at once so they never stack on top of each
+// other. Pure/testable. If there are more than fit on the page, the overflow
+// column is clamped on-page (rare extreme case).
+export function arrangeGrid(
+    count,
+    {pageWidth, pageHeight, itemWidth, itemHeight, gap = PAGE_GRID_SIZE, margin = PAGE_GRID_SIZE * 2, startY = null},
+) {
+    const positions = [];
+    const top = startY == null ? margin : startY;
+    const usableBottom = pageHeight - margin;
+    const lastColumnX = Math.max(margin, pageWidth - margin - itemWidth);
+    let x = margin;
+    let y = top;
+    for (let i = 0; i < count; i += 1) {
+        if (y + itemHeight > usableBottom && y > top) {
+            x += itemWidth + gap;
+            y = top;
+        }
+        positions.push({x: Math.min(x, lastColumnX), y});
+        y += itemHeight + gap;
+    }
+    return positions;
+}
+
 // Clamps a rigid-group translation (sdx, sdy in page px) so no element in the
 // selection leaves the page. `starts` are the pre-move element boxes. If an element
 // already overflows the page (e.g. the page was shrunk after placement) the feasible

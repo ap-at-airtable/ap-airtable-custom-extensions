@@ -1,17 +1,17 @@
-// View (published) mode: renders one designed page per record from the query
-// feed, with a print toolbar. A hidden print-only layer renders all pages at
-// physical scale for the browser print dialog.
+// View (published) mode: renders each record's pages from the query feed, with a
+// print toolbar. A record with N pages produces N sheets in order. A hidden
+// print-only layer renders every sheet at physical scale for the print dialog.
 
 import {useEffect, useRef, useState} from 'react';
 import {PageCanvas, ScaledPage} from '../render/page_canvas.js';
 import {resolvePageSizePx} from '../domain/page_geometry.mjs';
-import {getOrderedElements} from '../domain/layout_model.mjs';
 import {PrintLayer} from './print_layer.js';
 import {usePrintMode} from './use_print_mode.js';
 import {Button, Segmented} from '../ui/primitives.js';
 import {PrinterIcon, EmptyIcon, EditIcon, MaximizeIcon, CloseIcon} from '../ui/icons.js';
 import {useContainerWidth, useContainerSize} from '../ui/use_container_width.js';
 import {ZoomControl} from '../ui/zoom_control.js';
+import {isTextEntryTarget} from '../ui/dom.js';
 
 function ChevronLeft({size = 16}) {
     return (
@@ -29,11 +29,10 @@ function ChevronRight({size = 16}) {
     );
 }
 
-// Each record renders a full page. Continuous mode stacks them all into the DOM, so
-// cap it to keep a huge feed from freezing the tab; single mode still pages through
-// every record. Print is capped separately (a browser can't spool thousands of sheets).
-const MAX_CONTINUOUS_PAGES = 100;
-const MAX_PRINT_PAGES = 500;
+// A "sheet" is one page of one record. Continuous mode stacks sheets into the DOM,
+// so cap it; single mode still pages through everything. Print is capped separately.
+const MAX_CONTINUOUS_SHEETS = 100;
+const MAX_PRINT_SHEETS = 500;
 
 function EmptyState({icon: Icon, title, subtitle}) {
     return (
@@ -45,25 +44,24 @@ function EmptyState({icon: Icon, title, subtitle}) {
     );
 }
 
-export function ViewMode({page, layout, records, table, title, onExitPreview}) {
+export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const {printing, printNow} = usePrintMode(page);
     const [scrollRef, containerWidth] = useContainerWidth();
     const [currentIndex, setCurrentIndex] = useState(0);
-    // false = one page at a time with a pager; true = all pages stacked to scroll.
     const [continuous, setContinuous] = useState(false);
     const [zoom, setZoom] = useState(null);
-    // Presenter/slideshow: one page filling the screen. Requests OS fullscreen when
-    // the host iframe allows it, and presents in-place otherwise.
     const [presenting, setPresenting] = useState(false);
     const rootRef = useRef(null);
+    const scaleRef = useRef(1);
     const [stageRef, stageSize] = useContainerSize();
+
+    const pageCount = pages.length;
+    const total = records.length * pageCount; // total sheets
 
     const enterPresent = () => {
         setContinuous(false);
         setPresenting(true);
-        rootRef.current?.requestFullscreen?.().catch(() => {
-            // The host iframe may not grant fullscreen; present in-place instead.
-        });
+        rootRef.current?.requestFullscreen?.().catch(() => {});
     };
     const exitPresent = () => {
         setPresenting(false);
@@ -72,63 +70,99 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
         }
     };
 
-    // Keep our state in sync when the user leaves fullscreen via Esc or the browser UI.
     useEffect(() => {
         const onFsChange = () => {
-            if (!document.fullscreenElement) {
-                setPresenting(false);
-            }
+            if (!document.fullscreenElement) setPresenting(false);
         };
         document.addEventListener('fullscreenchange', onFsChange);
         return () => document.removeEventListener('fullscreenchange', onFsChange);
     }, []);
 
-    // Keep the index in range as the record set shrinks/grows.
+    // Keep the sheet index in range as records/pages change.
     useEffect(() => {
-        setCurrentIndex((i) => Math.min(Math.max(i, 0), Math.max(records.length - 1, 0)));
-    }, [records.length]);
+        setCurrentIndex((i) => Math.min(Math.max(i, 0), Math.max(total - 1, 0)));
+    }, [total]);
 
-    const safeIndex = Math.min(Math.max(currentIndex, 0), Math.max(records.length - 1, 0));
+    const safeIndex = Math.min(Math.max(currentIndex, 0), Math.max(total - 1, 0));
+    const recordFor = (idx) => records[Math.floor(idx / pageCount)];
+    const entryFor = (idx) => pages[idx % pageCount];
+    const effectivePage = (entry) => ({...page, backgroundColor: entry.backgroundColor});
+    const posLabel = (idx) => {
+        const r = Math.floor(idx / pageCount) + 1;
+        const p = (idx % pageCount) + 1;
+        return pageCount > 1
+            ? `Record ${r} of ${records.length} · Page ${p} of ${pageCount}`
+            : `Record ${r} of ${records.length}`;
+    };
 
     // Arrow-key paging only applies to single-page mode.
     useEffect(() => {
-        if (continuous) {
-            return undefined;
-        }
+        if (continuous) return undefined;
         const onKeyDown = (e) => {
-            const tag = e.target?.tagName;
-            if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) {
-                return;
-            }
+            if (isTextEntryTarget(e.target)) return; // don't hijack keys while editing a field
             if (e.key === 'ArrowLeft' || e.key === 'PageUp') {
                 setCurrentIndex((i) => Math.max(i - 1, 0));
             } else if (e.key === 'ArrowRight' || e.key === 'PageDown' || (presenting && e.key === ' ')) {
-                // Space advances only in presenter mode, so it doesn't hijack normal scroll.
                 if (presenting) e.preventDefault();
-                setCurrentIndex((i) => Math.min(i + 1, records.length - 1));
+                setCurrentIndex((i) => Math.min(i + 1, total - 1));
             } else if (e.key === 'Escape' && presenting) {
                 setPresenting(false);
-                if (document.fullscreenElement) {
-                    document.exitFullscreen?.().catch(() => {});
-                }
+                if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
             }
         };
         window.addEventListener('keydown', onKeyDown);
         return () => window.removeEventListener('keydown', onKeyDown);
-    }, [records.length, continuous, presenting]);
+    }, [total, continuous, presenting]);
 
-    const elements = getOrderedElements(layout);
-    const continuousCapped = records.length > MAX_CONTINUOUS_PAGES;
-    const printCapped = records.length > MAX_PRINT_PAGES;
-    const printRecords = printCapped ? records.slice(0, MAX_PRINT_PAGES) : records;
+    // Pinch-to-zoom on touch: the extension runs in an iframe with no native visual
+    // viewport, so drive the existing zoom state from a two-finger gesture.
+    useEffect(() => {
+        const node = scrollRef.current;
+        if (!node) return undefined;
+        let startDist = 0;
+        let startScale = 1;
+        let pinching = false;
+        const dist = (t) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY);
+        const onStart = (e) => {
+            if (e.touches.length === 2) {
+                pinching = true;
+                startDist = dist(e.touches);
+                startScale = scaleRef.current;
+            }
+        };
+        const onMove = (e) => {
+            if (pinching && e.touches.length === 2 && startDist > 0) {
+                e.preventDefault();
+                setZoom(Math.max(0.25, Math.min(3, startScale * (dist(e.touches) / startDist))));
+            }
+        };
+        const onEnd = (e) => {
+            if (e.touches.length < 2) pinching = false;
+        };
+        node.addEventListener('touchstart', onStart, {passive: false});
+        node.addEventListener('touchmove', onMove, {passive: false});
+        node.addEventListener('touchend', onEnd);
+        node.addEventListener('touchcancel', onEnd);
+        return () => {
+            node.removeEventListener('touchstart', onStart);
+            node.removeEventListener('touchmove', onMove);
+            node.removeEventListener('touchend', onEnd);
+            node.removeEventListener('touchcancel', onEnd);
+        };
+    }, [total, scrollRef]);
+
+    const totalElements = pages.reduce((n, e) => n + (e.layout.order ? e.layout.order.length : 0), 0);
+    const continuousCapped = total > MAX_CONTINUOUS_SHEETS;
+    const printCapped = total > MAX_PRINT_SHEETS;
+    const maxPrintRecords = Math.max(1, Math.floor(MAX_PRINT_SHEETS / pageCount));
+    const printRecords = printCapped ? records.slice(0, maxPrintRecords) : records;
     const {width: pageWidth, height: pageHeight} = resolvePageSizePx(page);
     const fitScale =
         containerWidth > 0 ? Math.max(0.1, Math.min(1, (containerWidth - 48) / pageWidth)) : 0.5;
     const scale = zoom != null ? zoom : fitScale;
+    scaleRef.current = scale; // read by the pinch handler without re-subscribing
     const applyZoom = (next) => setZoom(Math.max(0.25, Math.min(3, next)));
 
-    // Presenter scale: fit the page within the stage on BOTH axes (contain), scaling
-    // up a small page to fill a big screen. Falls back to fitScale before measured.
     const PRESENT_PADDING = 80;
     const presentScale =
         stageSize.width > 0 && stageSize.height > 0
@@ -142,7 +176,7 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
               )
             : fitScale;
 
-    if (elements.length === 0) {
+    if (totalElements === 0) {
         return (
             <EmptyState
                 icon={EmptyIcon}
@@ -162,6 +196,19 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
         );
     }
 
+    // Sheets to render in the scroll area (single = current only; continuous = capped).
+    const visibleSheets = [];
+    if (continuous) {
+        for (let i = 0; i < Math.min(total, MAX_CONTINUOUS_SHEETS); i += 1) {
+            visibleSheets.push({key: i, record: recordFor(i), entry: entryFor(i)});
+        }
+    } else {
+        visibleSheets.push({key: safeIndex, record: recordFor(safeIndex), entry: entryFor(safeIndex)});
+    }
+
+    const presentRecord = recordFor(safeIndex);
+    const presentEntry = entryFor(safeIndex);
+
     return (
         <div ref={rootRef} className="relative flex h-full flex-col bg-gray-gray50 dark:bg-gray-gray900">
             <div className="pd-screen-only flex flex-wrap items-center justify-between gap-2 border-b border-gray-gray200 bg-white px-4 py-2 dark:border-gray-gray700 dark:bg-gray-gray800">
@@ -177,11 +224,11 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                         ) : null}
                     </div>
                     <div className="text-xs text-gray-gray500">
-                        {records.length} {records.length === 1 ? 'page' : 'pages'}
+                        {total} {total === 1 ? 'page' : 'pages'}
                     </div>
                 </div>
                 <div className="flex items-center gap-2">
-                    {records.length > 1 ? (
+                    {total > 1 ? (
                         <Segmented
                             value={continuous ? 'continuous' : 'single'}
                             options={[
@@ -191,14 +238,23 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                             onChange={(v) => setContinuous(v === 'continuous')}
                         />
                     ) : null}
-                    {!continuous && records.length > 1 ? (
+                    {!continuous && total > 1 ? (
                         <span
                             aria-live="polite"
                             className="whitespace-nowrap text-xs tabular-nums text-gray-gray500 dark:text-gray-gray400"
                         >
-                            Record {safeIndex + 1} of {records.length}
+                            {posLabel(safeIndex)}
                         </span>
                     ) : null}
+                    <Button
+                        variant="default"
+                        size="sm"
+                        icon={MaximizeIcon}
+                        onClick={enterPresent}
+                        title="Present full screen (arrow keys to move)"
+                    >
+                        Present
+                    </Button>
                     {onExitPreview ? (
                         <Button
                             variant="default"
@@ -210,15 +266,6 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                             Back to editing
                         </Button>
                     ) : null}
-                    <Button
-                        variant="default"
-                        size="sm"
-                        icon={MaximizeIcon}
-                        onClick={enterPresent}
-                        title="Present full screen (one page per record, arrow keys to move)"
-                    >
-                        Present
-                    </Button>
                     <Button
                         variant="primary"
                         icon={PrinterIcon}
@@ -234,29 +281,34 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                 <div className="pd-screen-only space-y-0.5 border-b border-yellow-yellowLight1 bg-yellow-yellowLight2 px-4 py-1 text-[11px] text-yellow-yellowDark1 dark:border-yellow-yellowDark1 dark:bg-yellow-yellowDark1 dark:text-white">
                     {continuous && continuousCapped ? (
                         <div>
-                            Continuous view shows the first {MAX_CONTINUOUS_PAGES} of {records.length}{' '}
-                            pages — switch to Single to page through all of them.
+                            Continuous view shows the first {MAX_CONTINUOUS_SHEETS} of {total} pages —
+                            switch to Single to page through all of them.
                         </div>
                     ) : null}
                     {printCapped ? (
                         <div>
-                            Printing is limited to the first {MAX_PRINT_PAGES} of {records.length} pages.
+                            Printing is limited to the first {maxPrintRecords * pageCount} of {total} pages.
                         </div>
                     ) : null}
                 </div>
             ) : null}
 
             <div className="relative flex min-h-0 flex-1 flex-col">
-                <div ref={scrollRef} className="pd-desk pd-screen-only flex-1 overflow-auto">
+                <div
+                    ref={scrollRef}
+                    className="pd-desk pd-screen-only flex-1 overflow-auto"
+                    style={{touchAction: 'pan-x pan-y'}}
+                >
                     <div className="flex min-h-full w-max min-w-full flex-col items-center gap-4 p-6">
-                        {(continuous ? records.slice(0, MAX_CONTINUOUS_PAGES) : [records[safeIndex]]).map((record) => (
-                            <ScaledPage key={record.id} page={page} scale={scale}>
+                        {visibleSheets.map((sheet) => (
+                            <ScaledPage key={sheet.key} page={page} scale={scale}>
                                 <PageCanvas
-                                    page={page}
-                                    layout={layout}
-                                    record={record}
+                                    page={effectivePage(sheet.entry)}
+                                    layout={sheet.entry.layout}
+                                    record={sheet.record}
                                     table={table}
                                     scale={scale}
+                                    interactive
                                 />
                             </ScaledPage>
                         ))}
@@ -269,17 +321,17 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                     onIn={() => applyZoom(scale + 0.1)}
                     onReset={() => setZoom(null)}
                     onPrev={
-                        !continuous && records.length > 1
+                        !continuous && total > 1
                             ? () => setCurrentIndex((i) => Math.max(i - 1, 0))
                             : undefined
                     }
                     onNext={
-                        !continuous && records.length > 1
-                            ? () => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))
+                        !continuous && total > 1
+                            ? () => setCurrentIndex((i) => Math.min(i + 1, total - 1))
                             : undefined
                     }
                     prevDisabled={safeIndex === 0}
-                    nextDisabled={safeIndex === records.length - 1}
+                    nextDisabled={safeIndex === total - 1}
                 />
             </div>
 
@@ -290,9 +342,9 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                 >
                     <ScaledPage page={page} scale={presentScale}>
                         <PageCanvas
-                            page={page}
-                            layout={layout}
-                            record={records[safeIndex]}
+                            page={effectivePage(presentEntry)}
+                            layout={presentEntry.layout}
+                            record={presentRecord}
                             table={table}
                             scale={presentScale}
                         />
@@ -308,7 +360,7 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                         <CloseIcon size={20} />
                     </button>
 
-                    {records.length > 1 ? (
+                    {total > 1 ? (
                         <div className="absolute bottom-5 left-1/2 flex -translate-x-1/2 items-center gap-2">
                             <button
                                 type="button"
@@ -321,15 +373,15 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
                             </button>
                             <span
                                 aria-live="polite"
-                                className="min-w-[3.5rem] rounded-full bg-black/50 px-3 py-1 text-center text-xs tabular-nums text-white"
+                                className="rounded-full bg-black/50 px-3 py-1 text-center text-xs tabular-nums text-white"
                             >
-                                {safeIndex + 1} / {records.length}
+                                {posLabel(safeIndex)}
                             </span>
                             <button
                                 type="button"
                                 aria-label="Next page"
-                                disabled={safeIndex === records.length - 1}
-                                onClick={() => setCurrentIndex((i) => Math.min(i + 1, records.length - 1))}
+                                disabled={safeIndex === total - 1}
+                                onClick={() => setCurrentIndex((i) => Math.min(i + 1, total - 1))}
                                 className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-white hover:bg-white/20 disabled:opacity-30"
                             >
                                 <ChevronRight size={20} />
@@ -340,7 +392,7 @@ export function ViewMode({page, layout, records, table, title, onExitPreview}) {
             ) : null}
 
             {printing ? (
-                <PrintLayer page={page} layout={layout} records={printRecords} table={table} />
+                <PrintLayer page={page} pages={pages} records={printRecords} table={table} />
             ) : null}
         </div>
     );

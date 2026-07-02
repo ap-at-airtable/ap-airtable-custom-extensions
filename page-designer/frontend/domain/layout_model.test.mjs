@@ -13,9 +13,12 @@ import {
     sendBackward,
     clampElementToPage,
     clampGroupDelta,
+    columnFractions,
+    arrangeGrid,
     snapElement,
     pruneDeletedFieldElements,
     hydrateLayout,
+    hydratePages,
 } from './layout_model.mjs';
 import {defaultLayout} from './config_keys.mjs';
 
@@ -113,6 +116,61 @@ test('clampGroupDelta keeps an in-bounds selection on the page', () => {
     assert.deepEqual(clampGroupDelta(-200, 0, starts, 100, 100), {sdx: -10, sdy: 0});
     // A modest in-range move passes through untouched.
     assert.deepEqual(clampGroupDelta(5, 5, starts, 100, 100), {sdx: 5, sdy: 5});
+});
+
+test('hydratePages normalizes a v2 pages array', () => {
+    const raw = [
+        {backgroundColor: '#eee', layout: {order: ['a'], elementsById: {a: {id: 'a', kind: ElementKind.TEXT, x: 0, y: 0}}}},
+        {layout: {order: [], elementsById: {}}},
+    ];
+    const pages = hydratePages(raw, null, null);
+    assert.equal(pages.length, 2);
+    assert.equal(pages[0].backgroundColor, '#eee');
+    assert.equal(pages[0].layout.elementsById.a.style.color, '#1d1f25'); // hydrated
+    assert.equal(pages[1].backgroundColor, '#ffffff'); // defaulted
+});
+
+test('hydratePages migrates a v1 doc (single layout + page background)', () => {
+    const legacyLayout = {order: ['a'], elementsById: {a: {id: 'a', kind: ElementKind.FIELD, x: 5, y: 6}}};
+    const pages = hydratePages(undefined, legacyLayout, '#abcdef');
+    assert.equal(pages.length, 1);
+    assert.equal(pages[0].backgroundColor, '#abcdef');
+    assert.equal(pages[0].layout.order[0], 'a');
+    assert.equal(pages[0].layout.elementsById.a.x, 5);
+});
+
+test('hydratePages always returns at least one page', () => {
+    const pages = hydratePages(undefined, null, undefined);
+    assert.equal(pages.length, 1);
+    assert.deepEqual(pages[0].layout, {order: [], elementsById: {}});
+    assert.equal(pages[0].backgroundColor, '#ffffff');
+});
+
+test('columnFractions: equal by default, normalized, missing cols share equally', () => {
+    assert.deepEqual(columnFractions([], {}), []);
+    assert.deepEqual(columnFractions(['a', 'b'], {}), [0.5, 0.5]);
+    assert.deepEqual(columnFractions(['a', 'b', 'c'], {a: 0.5, b: 0.25, c: 0.25}), [0.5, 0.25, 0.25]);
+    // A missing column defaults to an equal share, then the whole set renormalizes.
+    const r = columnFractions(['a', 'b'], {a: 0.6}); // b -> 0.5; sum 1.1
+    assert.ok(Math.abs(r[0] - 0.6 / 1.1) < 1e-9 && Math.abs(r[1] - 0.5 / 1.1) < 1e-9);
+});
+
+test('arrangeGrid packs boxes top-to-bottom then wraps columns, no overlap', () => {
+    const opts = {pageWidth: 200, pageHeight: 200, itemWidth: 60, itemHeight: 40, gap: 10, margin: 20};
+    // Three fit in one column (y = 20, 70, 120; step 50 > height 40).
+    assert.deepEqual(arrangeGrid(3, opts), [
+        {x: 20, y: 20},
+        {x: 20, y: 70},
+        {x: 20, y: 120},
+    ]);
+    // A fourth wraps to the next column (x = 20 + 60 + 10 = 90).
+    assert.deepEqual(arrangeGrid(5, opts), [
+        {x: 20, y: 20},
+        {x: 20, y: 70},
+        {x: 20, y: 120},
+        {x: 90, y: 20},
+        {x: 90, y: 70},
+    ]);
 });
 
 test('clampGroupDelta freezes an axis when an element already overflows', () => {

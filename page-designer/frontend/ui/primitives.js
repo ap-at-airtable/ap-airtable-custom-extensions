@@ -1,7 +1,8 @@
 // Tailwind UI primitives that replace the (unavailable) @airtable/blocks/ui
 // component library. Refined, consistent sizing; dependency-free; dark-mode aware.
 
-import {useId, useState, cloneElement, isValidElement} from 'react';
+import {useId, useState, useEffect, cloneElement, isValidElement} from 'react';
+import {CloseIcon} from './icons.js';
 
 const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -112,23 +113,47 @@ export function NumberInput({id, value, onChange, min, max, step = 1, suffix, cl
         if (typeof max === 'number') v = Math.min(max, v);
         return v;
     };
+    // Keep a local draft while typing so intermediate keystrokes aren't clamped —
+    // e.g. typing "20" when min is 6 would otherwise snap "2" to 6. Commit (parse +
+    // clamp) on blur/Enter; resync from the prop whenever we're not being edited.
+    const [draft, setDraft] = useState(Number.isFinite(value) ? String(value) : '');
+    const [focused, setFocused] = useState(false);
+    useEffect(() => {
+        if (!focused) setDraft(Number.isFinite(value) ? String(value) : '');
+    }, [value, focused]);
+    const commit = () => {
+        const n = parseFloat(draft);
+        if (!Number.isNaN(n)) onChange(clamp(n));
+        setFocused(false); // resyncs the draft to the committed (clamped) value
+    };
     return (
         <div className={cx('relative flex items-center', className)}>
             <input
                 id={id}
                 type="number"
-                value={Number.isFinite(value) ? value : ''}
+                value={draft}
                 min={min}
                 max={max}
                 step={step}
-                onChange={(e) => {
-                    const n = parseFloat(e.target.value);
-                    onChange(Number.isNaN(n) ? 0 : clamp(n));
+                onFocus={() => setFocused(true)}
+                onChange={(e) => setDraft(e.target.value)}
+                onBlur={commit}
+                onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                        commit();
+                        e.currentTarget.blur();
+                    }
                 }}
-                className={cx(FIELD, suffix && 'pr-7', 'tabular-nums')}
+                className={cx(
+                    FIELD,
+                    suffix ? 'pr-8' : '',
+                    'tabular-nums',
+                    // No spinners: hide the native ones and don't render a custom stepper.
+                    '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+                )}
             />
             {suffix ? (
-                <span className="pointer-events-none absolute right-2.5 text-xs text-gray-gray500">
+                <span className="pointer-events-none absolute right-2.5 text-xs text-gray-gray500 dark:text-gray-gray400">
                     {suffix}
                 </span>
             ) : null}
@@ -197,7 +222,7 @@ export function Segmented({value, options, onChange, className, label, ...rest})
             role="radiogroup"
             aria-label={label}
             className={cx(
-                'inline-flex rounded-lg bg-gray-gray100 p-0.5 dark:bg-gray-gray700',
+                'inline-flex rounded-full bg-gray-gray100 p-0.5 dark:bg-gray-gray700',
                 className,
             )}
         >
@@ -210,10 +235,14 @@ export function Segmented({value, options, onChange, className, label, ...rest})
                         type="button"
                         role="radio"
                         aria-checked={active}
-                        title={opt.title || opt.label}
+                        // Icon-only options need a title/aria-label for their name; a
+                        // labeled option already shows its text, so a title there just
+                        // pops a redundant native tooltip echoing the visible label.
+                        title={opt.label ? undefined : opt.title}
+                        aria-label={opt.label ? undefined : opt.title}
                         onClick={() => onChange(opt.value)}
                         className={cx(
-                            'flex flex-1 items-center justify-center gap-1 rounded-md px-2 py-1 text-xs font-medium transition-all',
+                            'flex flex-1 items-center justify-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-all',
                             active
                                 ? 'bg-white text-gray-gray700 shadow-xs dark:bg-gray-gray900 dark:text-white'
                                 : 'text-gray-gray500 hover:text-gray-gray700 dark:text-gray-gray400 dark:hover:text-gray-gray200',
@@ -263,6 +292,17 @@ export function ColorInput({value, onChange, className, ...rest}) {
                 onChange={(e) => onChange(e.target.value)}
                 className={cx(FIELD, 'flex-1 font-mono text-xs')}
             />
+            {hasColor ? (
+                <button
+                    type="button"
+                    onClick={() => onChange('transparent')}
+                    title="Reset to transparent"
+                    aria-label="Reset to transparent"
+                    className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-md text-gray-gray500 hover:bg-gray-gray100 hover:text-gray-gray700 focus:outline-none focus-visible:ring-2 focus-visible:ring-blue-blueLight1 dark:text-gray-gray400 dark:hover:bg-gray-gray700"
+                >
+                    <CloseIcon size={14} />
+                </button>
+            ) : null}
         </div>
     );
 }
@@ -290,7 +330,11 @@ export function Field({label, children, hint}) {
                 </label>
             ) : null}
             {child}
-            {hint ? <div className="text-[11px] leading-snug text-gray-gray500">{hint}</div> : null}
+            {hint ? (
+                <div className="text-[11px] leading-snug text-gray-gray500 dark:text-gray-gray400">
+                    {hint}
+                </div>
+            ) : null}
         </div>
     );
 }
@@ -301,7 +345,7 @@ export function Row({children, className}) {
 
 export function SectionHeader({children}) {
     return (
-        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500">
+        <div className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500 dark:text-gray-gray400">
             {children}
         </div>
     );
@@ -317,9 +361,9 @@ export function Section({title, defaultOpen = false, children}) {
                 type="button"
                 onClick={() => setOpen((o) => !o)}
                 aria-expanded={open}
-                className="flex w-full items-center justify-between py-2.5 text-left focus:outline-none"
+                className="flex w-full items-center justify-between rounded py-2.5 text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-blue-blueLight1"
             >
-                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500">
+                <span className="text-[11px] font-semibold uppercase tracking-wider text-gray-gray500 dark:text-gray-gray400">
                     {title}
                 </span>
                 <ChevronDown

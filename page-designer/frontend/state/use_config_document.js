@@ -1,58 +1,54 @@
 // Reads/writes the persisted design document via GlobalConfig.
-// GlobalConfig writes are optimistic (local update is immediate, re-render via
-// useGlobalConfig), so transient drag state is handled locally in the editor and
-// only committed here on pointer-up.
+// The document is a shared page geometry (`page`) plus a `pages` array, one entry
+// per page of the document ({backgroundColor, layout}). Writes are optimistic;
+// transient drag state lives in the editor and commits here on pointer-up.
 
 import {useCallback, useMemo, useRef, useState} from 'react';
 import {useGlobalConfig} from '@airtable/blocks/interface/ui';
-import {ConfigKey, defaultPage, SCHEMA_VERSION} from '../domain/config_keys.mjs';
-import {hydrateLayout} from '../domain/layout_model.mjs';
+import {ConfigKey, defaultPage, defaultPageEntry, SCHEMA_VERSION} from '../domain/config_keys.mjs';
+import {hydratePages} from '../domain/layout_model.mjs';
 
-// The page + layout share one ~150kB GlobalConfig ceiling, so budget them
-// together (with headroom for schemaVersion + any other host keys) rather than
-// checking the layout alone.
+// The whole document shares one ~150kB GlobalConfig ceiling.
 const MAX_DOC_BYTES = 145000;
-
-// Cap the in-memory undo history so a long session can't grow without bound.
 const MAX_HISTORY = 50;
+const MAX_PAGES = 10;
 
-function estimateDocBytes(page, layout) {
-    return new TextEncoder().encode(JSON.stringify({page, layout})).length;
+function estimateDocBytes(page, pages) {
+    return new TextEncoder().encode(JSON.stringify({page, pages})).length;
 }
 
 export function useConfigDocument() {
     const globalConfig = useGlobalConfig();
 
     const rawPage = globalConfig.get(ConfigKey.PAGE);
-    // Memoize so page/layout keep a stable identity while the stored value is
-    // unchanged (otherwise the setPage/setLayout callbacks rebuild every render).
+    // Shared page geometry, merged over defaults for stable identity.
     const page = useMemo(() => {
-        const baseDefaultPage = defaultPage();
+        const base = defaultPage();
         return {
-            ...baseDefaultPage,
+            ...base,
             ...(rawPage || {}),
-            customSize: {...baseDefaultPage.customSize, ...((rawPage && rawPage.customSize) || {})},
+            customSize: {...base.customSize, ...((rawPage && rawPage.customSize) || {})},
         };
     }, [rawPage]);
 
-    const rawLayout = globalConfig.get(ConfigKey.LAYOUT);
-    // Hydrate against current defaults so a document written by an older schema
-    // renders without every read site guarding for missing keys. Memoized on the
-    // raw value so element identity stays stable across renders (preserves memo).
-    const layout = useMemo(() => hydrateLayout(rawLayout), [rawLayout]);
+    const rawPages = globalConfig.get(ConfigKey.PAGES);
+    const rawLayout = globalConfig.get(ConfigKey.LAYOUT); // legacy v1
+    // Hydrate + migrate v1 (single layout + page background) to the pages array.
+    const pages = useMemo(
+        () => hydratePages(rawPages, rawLayout, rawPage && rawPage.backgroundColor),
+        [rawPages, rawLayout, rawPage],
+    );
 
     const isEditable = globalConfig.hasPermissionToSet();
 
-    // In-memory undo/redo of prior {page, layout} snapshots. Ephemeral (cleared on
-    // reload) — GlobalConfig keeps no history of its own. `docRef` holds the latest
-    // committed doc so the write callbacks can snapshot it without stale-closure deps.
+    // In-memory undo/redo over the whole {page, pages} document. `docRef` holds the
+    // latest committed doc so callbacks snapshot it without stale-closure deps.
     const past = useRef([]);
     const future = useRef([]);
     const [, bumpHistory] = useState(0);
-    const docRef = useRef({page, layout});
-    docRef.current = {page, layout};
+    const docRef = useRef({page, pages});
+    docRef.current = {page, pages};
 
-    // Snapshot the pre-change doc onto the undo stack and drop any redo branch.
     const pushUndo = useCallback(() => {
         past.current.push(docRef.current);
         if (past.current.length > MAX_HISTORY) {
@@ -62,9 +58,42 @@ export function useConfigDocument() {
         bumpHistory((n) => n + 1);
     }, []);
 
-    const setPage = useCallback(
+    // Writes the pages array (and clears the legacy v1 layout key on first migration).
+    const writePages = useCallback(
+        (nextPages) => {
+            if (estimateDocBytes(docRef.current.page, nextPages) > MAX_DOC_BYTES) {
+                return Promise.reject(new Error('DOC_TOO_LARGE'));
+            }
+            return globalConfig.setPathsAsync([
+                {path: [ConfigKey.PAGES], value: nextPages},
+                {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
+                {path: [ConfigKey.LAYOUT], value: undefined},
+            ]);
+        },
+        [globalConfig],
+    );
+
+    const setLayout = useCallback(
+        (index, nextLayout) => {
+            const next = docRef.current.pages.map((p, i) => (i === index ? {...p, layout: nextLayout} : p));
+            pushUndo();
+            return writePages(next);
+        },
+        [pushUndo, writePages],
+    );
+
+    const setBackground = useCallback(
+        (index, backgroundColor) => {
+            const next = docRef.current.pages.map((p, i) => (i === index ? {...p, backgroundColor} : p));
+            pushUndo();
+            return writePages(next);
+        },
+        [pushUndo, writePages],
+    );
+
+    const setPageGeometry = useCallback(
         (nextPage) => {
-            if (estimateDocBytes(nextPage, docRef.current.layout) > MAX_DOC_BYTES) {
+            if (estimateDocBytes(nextPage, docRef.current.pages) > MAX_DOC_BYTES) {
                 return Promise.reject(new Error('DOC_TOO_LARGE'));
             }
             pushUndo();
@@ -76,28 +105,32 @@ export function useConfigDocument() {
         [globalConfig, pushUndo],
     );
 
-    const setLayout = useCallback(
-        (nextLayout) => {
-            if (estimateDocBytes(docRef.current.page, nextLayout) > MAX_DOC_BYTES) {
-                return Promise.reject(new Error('DOC_TOO_LARGE'));
+    const addPage = useCallback(() => {
+        if (docRef.current.pages.length >= MAX_PAGES) {
+            return Promise.resolve();
+        }
+        pushUndo();
+        return writePages([...docRef.current.pages, defaultPageEntry()]);
+    }, [pushUndo, writePages]);
+
+    const removePage = useCallback(
+        (index) => {
+            if (docRef.current.pages.length <= 1) {
+                return Promise.resolve();
             }
             pushUndo();
-            return globalConfig.setPathsAsync([
-                {path: [ConfigKey.LAYOUT], value: nextLayout},
-                {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
-            ]);
+            return writePages(docRef.current.pages.filter((_, i) => i !== index));
         },
-        [globalConfig, pushUndo],
+        [pushUndo, writePages],
     );
 
-    // Undo/redo restore a full {page, layout} snapshot (both keys) so the document
-    // stays internally consistent regardless of which key the original change touched.
     const restore = useCallback(
         (snap) =>
             globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGE], value: snap.page},
-                {path: [ConfigKey.LAYOUT], value: snap.layout},
+                {path: [ConfigKey.PAGES], value: snap.pages},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
+                {path: [ConfigKey.LAYOUT], value: undefined},
             ]),
         [globalConfig],
     );
@@ -124,10 +157,14 @@ export function useConfigDocument() {
 
     return {
         page,
-        layout,
+        pages,
+        maxPages: MAX_PAGES,
         isEditable,
-        setPage,
         setLayout,
+        setBackground,
+        setPageGeometry,
+        addPage,
+        removePage,
         undo,
         redo,
         canUndo: past.current.length > 0,

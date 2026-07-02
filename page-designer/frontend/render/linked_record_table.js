@@ -3,17 +3,47 @@
 // is its own component (hooks run unconditionally here; ElementContent decides
 // whether to mount it).
 
+import {useEffect, useRef, useState} from 'react';
+import {createPortal} from 'react-dom';
 import {useBase, useRecords} from '@airtable/blocks/interface/ui';
 import {extractLinkedRecords} from '../domain/cell_value_helpers.mjs';
+import {columnFractions} from '../domain/layout_model.mjs';
+import {editableInputKind} from '../domain/editable_fields.mjs';
 import {textStyle} from './geometry_style.js';
+import {EditableField} from './editable_field.js';
+import {TrashIcon} from '../ui/icons.js';
+import {isTextEntryTarget} from '../ui/dom.js';
 
-export function LinkedRecordTable({element, field, record, table}) {
+export function LinkedRecordTable({element, field, record, table, editable}) {
     const base = useBase();
     const linkedTableId = field.config && field.config.options ? field.config.options.linkedTableId : null;
     const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
     // Hooks must be unconditional — always pass a valid table (fall back to the
     // primary table; its records are ignored when there's no linked table).
     const linkedRecords = useRecords(linkedTable || table);
+    const [creating, setCreating] = useState(false);
+    const [addError, setAddError] = useState(false);
+    const [menu, setMenu] = useState(null); // {x, y, id} right-click / long-press delete menu
+    const pressTimer = useRef(null);
+
+    // Close the row menu on scroll / resize / Escape (outside click is handled by
+    // the portal's backdrop).
+    useEffect(() => {
+        if (!menu) return undefined;
+        const close = () => setMenu(null);
+        const onKey = (e) => {
+            if (e.key === 'Escape') close();
+        };
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        window.addEventListener('keydown', onKey);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+            window.removeEventListener('keydown', onKey);
+        };
+    }, [menu]);
+    useEffect(() => () => clearTimeout(pressTimer.current), []);
 
     const ts = textStyle(element.style);
 
@@ -37,58 +67,235 @@ export function LinkedRecordTable({element, field, record, table}) {
 
     const recordById = new Map(linkedRecords.map((r) => [r.id, r]));
     const refs = record ? extractLinkedRecords(record.getCellValue(field)) : [];
+    const fractions = columnFractions(columns.map((c) => c.id), element.linkedColumnWidths);
 
     const cellStyle = {
-        ...ts,
+        ...ts, // ts carries the element's textAlign (Horizontal align) so cells honor it
         border: '1px solid rgba(0,0,0,0.15)',
         padding: '2px 5px',
-        textAlign: 'left',
         verticalAlign: 'top',
         overflowWrap: 'break-word',
     };
-    const headStyle = {...cellStyle, fontWeight: 'bold'};
+    const headStyle = {...cellStyle, fontWeight: 'bold', backgroundColor: element.style.tableHeaderColor};
+    const stripeRows = !!element.style.tableStripeRows;
+    const rowStyle = (i) => (stripeRows && i % 2 === 1 ? {backgroundColor: 'rgba(0,0,0,0.04)'} : undefined);
+
+    const canModifyLinks =
+        editable && record && table.hasPermissionToUpdateRecord(record, {[field.id]: undefined});
+    const canCreate =
+        canModifyLinks &&
+        typeof linkedTable.createRecordAsync === 'function' &&
+        linkedTable.hasPermissionToCreateRecord();
+    const canDeleteRows =
+        editable &&
+        record &&
+        typeof linkedTable.deleteRecordAsync === 'function' &&
+        typeof linkedTable.hasPermissionToDeleteRecord === 'function' &&
+        linkedTable.hasPermissionToDeleteRecord();
+
+    // Right-click (or long-press on touch) a row → a small menu to delete it.
+    const openMenu = (id, x, y) => {
+        if (!canDeleteRows) return;
+        const w = 160;
+        const h = 48;
+        setMenu({
+            id,
+            x: Math.max(8, Math.min(x, window.innerWidth - w - 8)),
+            y: Math.max(8, Math.min(y, window.innerHeight - h - 8)),
+        });
+    };
+    const rowMenuProps = (id) =>
+        canDeleteRows
+            ? {
+                  onContextMenu: (e) => {
+                      // Inside a focused input/select: let the browser's own menu show.
+                      if (isTextEntryTarget(e.target)) return;
+                      e.preventDefault();
+                      openMenu(id, e.clientX, e.clientY);
+                  },
+                  onTouchStart: (e) => {
+                      if (isTextEntryTarget(e.target)) return; // don't hijack a focused field
+                      const t = e.touches[0];
+                      const x = t.clientX;
+                      const y = t.clientY;
+                      clearTimeout(pressTimer.current);
+                      pressTimer.current = setTimeout(() => openMenu(id, x, y), 500);
+                  },
+                  onTouchEnd: () => clearTimeout(pressTimer.current),
+                  onTouchMove: () => clearTimeout(pressTimer.current),
+              }
+            : {};
+
+    // "Delete row" removes the linked record itself (Airtable also drops it from
+    // this cell). Destructive — it deletes the record, not just the link.
+    const deleteRow = async (id) => {
+        if (!linkedTable.hasPermissionToDeleteRecord(id)) return;
+        try {
+            await linkedTable.deleteRecordAsync(id);
+        } catch (e) {
+            console.warn('Page Designer: could not delete linked record', e);
+        }
+    };
+    const addRow = async () => {
+        if (creating) return;
+        setCreating(true);
+        setAddError(false);
+        let newId = null;
+        try {
+            newId = await linkedTable.createRecordAsync({});
+            // Re-read the freshest link value (not the render snapshot) so a concurrent
+            // change isn't clobbered by this whole-array write.
+            const cur = extractLinkedRecords(record.getCellValue(field)).map((r) => ({id: r.id}));
+            await table.updateRecordAsync(record, {[field.id]: [...cur, {id: newId}]});
+        } catch (e) {
+            console.warn('Page Designer: could not add linked record', e);
+            setAddError(true);
+            // Roll back the created-but-unlinked record so it isn't left orphaned.
+            if (
+                newId &&
+                typeof linkedTable.deleteRecordAsync === 'function' &&
+                linkedTable.hasPermissionToDeleteRecord?.(newId)
+            ) {
+                try {
+                    await linkedTable.deleteRecordAsync(newId);
+                } catch (delErr) {
+                    console.warn('Page Designer: could not roll back linked record', delErr);
+                }
+            }
+        } finally {
+            setCreating(false);
+        }
+    };
 
     return (
-        // table-layout: fixed gives columns equal width so one column can't hog space.
-        <table style={{...ts, borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed'}}>
-            <thead>
-                <tr>
-                    {columns.map((col) => (
-                        <th key={col.id} style={headStyle}>
-                            {col.name}
-                        </th>
-                    ))}
-                </tr>
-            </thead>
-            <tbody>
-                {record ? (
-                    refs.map((ref, rowIndex) => {
-                        const linkedRecord = recordById.get(ref.id);
-                        return (
-                            <tr key={`${ref.id}-${rowIndex}`}>
-                                {columns.map((col, colIndex) => (
-                                    <td key={col.id} style={cellStyle}>
-                                        {linkedRecord
-                                            ? linkedRecord.getCellValueAsString(col)
-                                            : colIndex === 0
-                                              ? ref.name
-                                              : ''}
-                                    </td>
-                                ))}
-                            </tr>
-                        );
-                    })
-                ) : (
-                    // Editor preview without a record: show one placeholder row.
+        <>
+            {/* Per-column widths go on the first-row <th>, not a <colgroup>: a <col>
+                width updated after the initial layout isn't honored here, but the
+                first-row cells reliably drive the fixed layout. */}
+            <table style={{...ts, borderCollapse: 'collapse', width: '100%', tableLayout: 'fixed'}}>
+                <thead>
                     <tr>
-                        {columns.map((col) => (
-                            <td key={col.id} style={cellStyle}>
+                        {columns.map((col, i) => (
+                            <th key={col.id} style={{...headStyle, width: `${fractions[i] * 100}%`}}>
                                 {col.name}
-                            </td>
+                            </th>
                         ))}
                     </tr>
-                )}
-            </tbody>
-        </table>
+                </thead>
+                <tbody>
+                    {record ? (
+                        refs.map((ref, rowIndex) => {
+                            const linkedRecord = recordById.get(ref.id);
+                            return (
+                                <tr key={ref.id} style={rowStyle(rowIndex)} {...rowMenuProps(ref.id)}>
+                                    {columns.map((col, colIndex) => (
+                                        <td key={col.id} style={cellStyle}>
+                                            {linkedRecord && editable && linkedTable && editableInputKind(col.type) ? (
+                                                <EditableField field={col} record={linkedRecord} table={linkedTable} css={ts} />
+                                            ) : linkedRecord ? (
+                                                linkedRecord.getCellValueAsString(col)
+                                            ) : colIndex === 0 ? (
+                                                ref.name
+                                            ) : (
+                                                ''
+                                            )}
+                                        </td>
+                                    ))}
+                                </tr>
+                            );
+                        })
+                    ) : (
+                        // Editor preview without a record: show one placeholder row.
+                        <tr>
+                            {columns.map((col) => (
+                                <td key={col.id} style={cellStyle}>
+                                    {col.name}
+                                </td>
+                            ))}
+                        </tr>
+                    )}
+                    {canCreate ? (
+                        <tr>
+                            <td colSpan={columns.length} style={{...cellStyle, padding: 0}}>
+                                <button
+                                    type="button"
+                                    onClick={addRow}
+                                    disabled={creating}
+                                    title={addError ? 'Could not add a row — check your permissions or connection.' : undefined}
+                                    style={{
+                                        width: '100%',
+                                        border: 'none',
+                                        background: 'transparent',
+                                        font: 'inherit',
+                                        padding: '4px 5px',
+                                        textAlign: 'center',
+                                        cursor: creating ? 'default' : 'pointer',
+                                        color: addError ? '#e5484d' : `rgba(22,110,225,${creating ? 0.4 : 0.9})`,
+                                    }}
+                                >
+                                    {addError ? 'Add failed — retry' : '+ Add row'}
+                                </button>
+                            </td>
+                        </tr>
+                    ) : null}
+                </tbody>
+            </table>
+            {menu
+                ? createPortal(
+                      <div
+                          onMouseDown={() => setMenu(null)}
+                          onContextMenu={(e) => {
+                              e.preventDefault();
+                              setMenu(null);
+                          }}
+                          style={{position: 'fixed', inset: 0, zIndex: 10000}}
+                      >
+                          <div
+                              onMouseDown={(e) => e.stopPropagation()}
+                              style={{
+                                  position: 'fixed',
+                                  left: menu.x,
+                                  top: menu.y,
+                                  zIndex: 10001,
+                                  background: '#fff',
+                                  borderRadius: 8,
+                                  boxShadow: '0 8px 28px rgba(15,23,42,0.22), 0 2px 6px rgba(15,23,42,0.08)',
+                                  padding: 4,
+                                  minWidth: 150,
+                                  fontFamily: 'Inter, sans-serif',
+                                  fontSize: 13,
+                                  color: '#1d1f25',
+                              }}
+                          >
+                              <button
+                                  type="button"
+                                  onClick={() => {
+                                      const id = menu.id;
+                                      setMenu(null);
+                                      deleteRow(id);
+                                  }}
+                                  style={{
+                                      display: 'flex',
+                                      alignItems: 'center',
+                                      gap: 8,
+                                      width: '100%',
+                                      padding: '8px 10px',
+                                      border: 'none',
+                                      background: 'transparent',
+                                      cursor: 'pointer',
+                                      color: '#b42318',
+                                      font: 'inherit',
+                                      borderRadius: 6,
+                                      textAlign: 'left',
+                                  }}
+                              >
+                                  <TrashIcon size={14} /> Delete row
+                              </button>
+                          </div>
+                      </div>,
+                      document.body,
+                  )
+                : null}
+        </>
     );
 }

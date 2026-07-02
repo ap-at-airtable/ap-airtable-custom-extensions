@@ -40,8 +40,37 @@ export function usePrintMode(page) {
     // that races the print snapshot and yields blank pages.
     const printNow = useCallback(() => {
         flushSync(() => setPrinting(true));
-        window.print();
-        window.setTimeout(() => setPrinting(false), 1000);
+        const finish = () => {
+            window.print();
+            window.setTimeout(() => setPrinting(false), 1000);
+        };
+        // Wait for the print layer's images to finish loading before snapshotting.
+        // The layer is display:none on screen, so its images only start loading now
+        // (they're eager); printing before they load prints blank boxes. Cap the wait
+        // so a slow/broken image can't block printing.
+        const pending = [...document.querySelectorAll('.pd-print-only img')].filter(
+            (img) => !(img.complete && img.naturalWidth > 0),
+        );
+        if (pending.length === 0) {
+            finish();
+            return;
+        }
+        let settled = false;
+        const go = () => {
+            if (settled) return;
+            settled = true;
+            finish();
+        };
+        let remaining = pending.length;
+        const one = () => {
+            remaining -= 1;
+            if (remaining <= 0) go();
+        };
+        pending.forEach((img) => {
+            img.addEventListener('load', one, {once: true});
+            img.addEventListener('error', one, {once: true});
+        });
+        window.setTimeout(go, 5000);
     }, []);
 
     return {printing, printNow};

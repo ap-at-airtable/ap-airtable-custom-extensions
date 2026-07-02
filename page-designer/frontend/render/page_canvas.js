@@ -32,6 +32,8 @@ export function PageCanvas({
     scaleMode = 'transform',
     className = '',
     editor = false,
+    eagerImages = false,
+    interactive = false,
 }) {
     const {width, height} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -68,12 +70,36 @@ export function PageCanvas({
                         if (!visible && !editor) {
                             return null;
                         }
+                        // Cell-value signature: Record objects mutate in place (stable ref),
+                        // so ElementContent's memo would miss a field's value changing —
+                        // including server-recomputed formula/rollup values after an edit.
+                        // Threading the current value busts the memo when it actually changes.
+                        const boundField =
+                            element.fieldId && table ? table.getFieldByIdIfExists(element.fieldId) : null;
+                        let valueKey = null;
+                        if (boundField && record) {
+                            try {
+                                valueKey = record.getCellValueAsString(boundField);
+                            } catch {
+                                valueKey = null;
+                            }
+                        }
+                        // An editable field's affordance (ring/pill/input) can be taller
+                        // than a small element box; let it spill instead of clipping in
+                        // interactive view. Print and the editor stay clipped.
+                        const editableInteractive = interactive && element.style.editable;
+                        const contentStyle = elementContentStyle(element.style);
+                        if (editableInteractive) contentStyle.overflow = 'visible';
                         return (
                             <div
                                 key={element.id}
-                                style={{...elementBoxStyle(element), opacity: visible ? undefined : 0.4}}
+                                style={{
+                                    ...elementBoxStyle(element),
+                                    opacity: visible ? undefined : 0.4,
+                                    zIndex: editableInteractive ? 1 : undefined,
+                                }}
                             >
-                                <div style={elementContentStyle(element.style)}>
+                                <div style={contentStyle}>
                                     <ElementBoundary
                                         resetKey={element}
                                         fallback={<ElementRenderError editor={editor} />}
@@ -83,6 +109,9 @@ export function PageCanvas({
                                             record={record}
                                             table={table}
                                             colorOverride={colorOverride}
+                                            eagerImages={eagerImages}
+                                            interactive={interactive}
+                                            valueKey={valueKey}
                                         />
                                     </ElementBoundary>
                                 </div>

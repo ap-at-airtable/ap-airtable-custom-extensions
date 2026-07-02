@@ -67,6 +67,19 @@ export function defaultStyle() {
         imageFit: ImageFit.CONTAIN,
         showFieldLabel: false,
         linkedRecordDisplay: LinkedRecordDisplay.COMMA,
+        // Linked-record table styling: header cell fill and zebra row shading.
+        tableHeaderColor: '#f3f3f5',
+        tableStripeRows: true,
+        // How a select value renders: 'text', 'pill' (colored chip), or 'stepper'
+        // (single-select only). Text/pill apply to single- and multi-select.
+        selectDisplay: 'text',
+        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'.
+        stepperVariant: 'radio',
+        // Stepper colors: accent = completed/active steps + connectors; track = pending.
+        stepperColor: '#2d7ff9',
+        stepperTrackColor: '#cfd0d3',
+        // Let viewers edit this field's value inline (view mode only, supported types).
+        editable: false,
         lineColor: '#1d1f25',
         lineThickness: 1,
         // Value formatting for FIELD elements (numberFormat 'auto' = the field's
@@ -111,6 +124,8 @@ export function makeElement({id, kind, x, y, fieldId = null, overrides = {}}) {
         barcodeFormat: kind === ElementKind.BARCODE ? BarcodeFormat.CODE128 : null,
         // Linked-table field ids shown as columns when a linked field renders as a table.
         linkedColumns: [],
+        // Per-column width fractions (fieldId -> fraction); missing = equal share.
+        linkedColumnWidths: {},
         // Conditional rules ({visibility, color}); null = always shown, base color.
         rules: null,
         style: defaultStyle(),
