@@ -13,6 +13,7 @@ import {ElementPalette} from './element_palette.js';
 import {FieldRail} from './field_rail.js';
 import {PrintLayer} from '../view/print_layer.js';
 import {useContainerWidth} from '../ui/use_container_width.js';
+import {loadLastPosition, saveLastPosition} from '../state/last_position_store.js';
 import {resolvePageSizePx, snapToGrid, PAGE_GRID_SIZE} from '../domain/page_geometry.mjs';
 import {defaultSizeForKind, ElementKind} from '../domain/element_types.mjs';
 import {
@@ -58,12 +59,15 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const [railOpen, setRailOpen] = useState(false);
     const [zoom, setZoom] = useState(null);
-    const [pageIndex, setPageIndex] = useState(0);
+    // Restore the page the user was last on (mode flips remount this component).
+    const [pageIndex, setPageIndex] = useState(() => loadLastPosition(table.id).pageIndex);
     const [centerRef, centerWidth] = useContainerWidth();
     // Set when a page is added so we scroll it into view once it actually renders
     // (the GlobalConfig write + re-render is async; a fixed timeout races it).
     const pendingScrollBottom = useRef(false);
     const bottomRef = useRef(null); // sentinel below the last page, for scroll-into-view
+    const restoredPageRef = useRef(null); // wrapper of the restored page, for the one-time scroll
+    const didRestoreScroll = useRef(false);
 
     const fieldList = table.fields.map((f) => ({id: f.id, name: f.name, type: f.config.type}));
 
@@ -83,6 +87,20 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     }, [config.pages.length]);
 
     const activeIndex = Math.min(Math.max(pageIndex, 0), config.pages.length - 1);
+
+    useEffect(() => {
+        saveLastPosition(table.id, {pageIndex: activeIndex});
+    }, [table.id, activeIndex]);
+
+    // Bring the restored page into view once after mount (the stack starts at page
+    // 1). Wait for the first width measurement: fit-scale resizes the pages right
+    // after mount, which would leave an earlier scroll pointing mid-page.
+    useEffect(() => {
+        if (didRestoreScroll.current || centerWidth === 0) return;
+        didRestoreScroll.current = true;
+        if (activeIndex > 0) restoredPageRef.current?.scrollIntoView({block: 'start'});
+    }, [activeIndex, centerWidth]);
+
     const pageEntry = config.pages[activeIndex];
     // Effective page for the active page = shared geometry + this page's background.
     const effectivePage = {...config.page, backgroundColor: pageEntry.backgroundColor};
@@ -487,7 +505,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                         <div ref={centerRef} className="pd-desk min-w-0 flex-1 overflow-auto">
                             <div className="flex min-h-full w-max min-w-full flex-col items-center gap-14 p-6">
                                 {config.pages.map((p, i) => (
-                                    <div key={i} className="flex flex-col" style={{width: pageW * scale}}>
+                                    <div
+                                        key={i}
+                                        ref={i === activeIndex ? restoredPageRef : undefined}
+                                        className="flex flex-col"
+                                        style={{width: pageW * scale}}
+                                    >
                                         <div className="relative z-10 mb-2 flex items-center justify-between px-0.5">
                                             <span className="text-[11px] font-medium text-gray-gray400">
                                                 Page {i + 1}

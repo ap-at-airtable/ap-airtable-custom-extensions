@@ -294,15 +294,26 @@ export function EditorCanvas({
             </div>
 
             {showGrid ? (
-                <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                        backgroundImage:
-                            'linear-gradient(to right, rgba(22,110,225,0.14) 1px, transparent 1px),' +
-                            'linear-gradient(to bottom, rgba(22,110,225,0.14) 1px, transparent 1px)',
-                        backgroundSize: `${PAGE_GRID_SIZE * scale}px ${PAGE_GRID_SIZE * scale}px`,
-                    }}
-                />
+                <div className="pointer-events-none absolute inset-0">
+                    <div
+                        className="absolute inset-0"
+                        style={{
+                            backgroundImage:
+                                'linear-gradient(to right, rgba(22,110,225,0.14) 1px, transparent 1px),' +
+                                'linear-gradient(to bottom, rgba(22,110,225,0.14) 1px, transparent 1px)',
+                            backgroundSize: `${PAGE_GRID_SIZE * scale}px ${PAGE_GRID_SIZE * scale}px`,
+                        }}
+                    />
+                    {/* Stronger center guides (vertical + horizontal) for centering elements. */}
+                    <div
+                        className="absolute top-0 bottom-0"
+                        style={{left: '50%', width: 1, backgroundColor: 'rgba(22,110,225,0.4)'}}
+                    />
+                    <div
+                        className="absolute left-0 right-0"
+                        style={{top: '50%', height: 1, backgroundColor: 'rgba(22,110,225,0.4)'}}
+                    />
+                </div>
             ) : null}
 
             {elements.length === 0 ? (

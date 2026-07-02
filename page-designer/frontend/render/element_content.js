@@ -15,7 +15,7 @@ import {LinkedRecordTable} from './linked_record_table.js';
 import {EditableField} from './editable_field.js';
 import {ChoicePill} from './select_pill.js';
 import {SelectStepper} from './select_stepper.js';
-import {RatingDisplay, CheckboxDisplay} from './field_display.js';
+import {RatingDisplay, CheckboxDisplay, CollaboratorDisplay} from './field_display.js';
 import {editableInputKind} from '../domain/editable_fields.mjs';
 
 function DeletedField() {
@@ -83,6 +83,7 @@ function FieldText({element, css, record, table, interactive, editor}) {
     const fieldKind = field ? editableInputKind(field.type) : null;
     const isRating = fieldKind === 'rating';
     const isCheckbox = fieldKind === 'checkbox';
+    const isCollaborator = fieldKind === 'collaborator' || fieldKind === 'multicollaborator';
     const isInlineEditable =
         interactive && record && field && element.style.editable && editableInputKind(field.type);
 
@@ -96,8 +97,6 @@ function FieldText({element, css, record, table, interactive, editor}) {
                 css={css}
                 selectDisplay={selectMode || 'text'}
                 stepperVariant={element.style.stepperVariant || 'radio'}
-                stepperColor={element.style.stepperColor}
-                stepperTrackColor={element.style.stepperTrackColor}
             />
         );
     } else if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
@@ -121,14 +120,14 @@ function FieldText({element, css, record, table, interactive, editor}) {
                 record={record}
                 css={css}
                 variant={element.style.stepperVariant || 'radio'}
-                accent={element.style.stepperColor}
-                track={element.style.stepperTrackColor}
             />
         );
     } else if (isRating) {
         body = <RatingDisplay field={field} record={record} css={css} />;
     } else if (isCheckbox) {
         body = <CheckboxDisplay field={field} record={record} css={css} />;
+    } else if (isCollaborator) {
+        body = <CollaboratorDisplay field={field} record={record} css={css} />;
     } else {
         // Inherit the field's own formatting (currency symbol, percent, decimals,
         // date format) via getCellValueAsString. No record = editor preview: show the

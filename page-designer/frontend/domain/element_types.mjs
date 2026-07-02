@@ -73,11 +73,9 @@ export function defaultStyle() {
         // How a select value renders: 'text', 'pill' (colored chip), or 'stepper'
         // (single-select only). Text/pill apply to single- and multi-select.
         selectDisplay: 'text',
-        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'.
+        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'. The
+        // selected step is drawn in its choice's own color (no separate setting).
         stepperVariant: 'radio',
-        // Stepper colors: accent = completed/active steps + connectors; track = pending.
-        stepperColor: '#2d7ff9',
-        stepperTrackColor: '#cfd0d3',
         // Let viewers edit this field's value inline (view mode only, supported types).
         editable: false,
         lineColor: '#1d1f25',

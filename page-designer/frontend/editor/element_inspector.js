@@ -238,31 +238,17 @@ export function ElementInspector({
                         </Field>
                     ) : null}
                     {isSingleSelectField && style.selectDisplay === 'stepper' ? (
-                        <>
-                            <Field label="Stepper style">
-                                <Segmented
-                                    label="Stepper style"
-                                    value={style.stepperVariant || 'radio'}
-                                    options={[
-                                        {value: 'radio', label: 'Radio'},
-                                        {value: 'number', label: 'Number'},
-                                    ]}
-                                    onChange={(v) => setStyle({stepperVariant: v})}
-                                />
-                            </Field>
-                            <Field label="Active color">
-                                <ColorInput
-                                    value={style.stepperColor || '#2d7ff9'}
-                                    onChange={(c) => setStyle({stepperColor: c})}
-                                />
-                            </Field>
-                            <Field label="Track color">
-                                <ColorInput
-                                    value={style.stepperTrackColor || '#cfd0d3'}
-                                    onChange={(c) => setStyle({stepperTrackColor: c})}
-                                />
-                            </Field>
-                        </>
+                        <Field label="Stepper style" hint="The selected step uses its choice's color.">
+                            <Segmented
+                                label="Stepper style"
+                                value={style.stepperVariant || 'radio'}
+                                options={[
+                                    {value: 'radio', label: 'Radio'},
+                                    {value: 'number', label: 'Number'},
+                                ]}
+                                onChange={(v) => setStyle({stepperVariant: v})}
+                            />
+                        </Field>
                     ) : null}
                     {isLinkedField ? (
                         <Field label="Linked records">

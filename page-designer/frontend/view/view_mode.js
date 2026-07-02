@@ -12,6 +12,16 @@ import {PrinterIcon, EmptyIcon, EditIcon, MaximizeIcon, CloseIcon} from '../ui/i
 import {useContainerWidth, useContainerSize} from '../ui/use_container_width.js';
 import {ZoomControl} from '../ui/zoom_control.js';
 import {isTextEntryTarget} from '../ui/dom.js';
+import {loadLastPosition, saveLastPosition} from '../state/last_position_store.js';
+
+// Sheet index for a stored position, clamped against the current records/pages
+// (either may have changed since the position was saved).
+function sheetIndexFor(pos, recordCount, pageCount) {
+    if (recordCount === 0) return 0;
+    const r = Math.min(pos.recordIndex, recordCount - 1);
+    const p = Math.min(pos.pageIndex, pageCount - 1);
+    return r * pageCount + p;
+}
 
 function ChevronLeft({size = 16}) {
     return (
@@ -47,7 +57,12 @@ function EmptyState({icon: Icon, title, subtitle}) {
 export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const {printing, printNow} = usePrintMode(page);
     const [scrollRef, containerWidth] = useContainerWidth();
-    const [currentIndex, setCurrentIndex] = useState(0);
+    // Restore the last viewed sheet (mode flips remount this component). Records can
+    // arrive after mount; keep the position pending until they do.
+    const [currentIndex, setCurrentIndex] = useState(() =>
+        sheetIndexFor(loadLastPosition(table.id), records.length, Math.max(1, pages.length)),
+    );
+    const pendingRestore = useRef(records.length === 0 ? loadLastPosition(table.id) : null);
     const [continuous, setContinuous] = useState(false);
     const [zoom, setZoom] = useState(null);
     const [presenting, setPresenting] = useState(false);
@@ -78,10 +93,27 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
         return () => document.removeEventListener('fullscreenchange', onFsChange);
     }, []);
 
-    // Keep the sheet index in range as records/pages change.
+    // Keep the sheet index in range as records/pages change; consume a pending
+    // restore once records have actually arrived.
     useEffect(() => {
+        if (pendingRestore.current && total > 0) {
+            const pos = pendingRestore.current;
+            pendingRestore.current = null;
+            setCurrentIndex(sheetIndexFor(pos, records.length, pageCount));
+            return;
+        }
         setCurrentIndex((i) => Math.min(Math.max(i, 0), Math.max(total - 1, 0)));
-    }, [total]);
+    }, [total, records.length, pageCount]);
+
+    // Persist the position (skip until a pending restore has been applied, so the
+    // initial index 0 doesn't overwrite the saved spot before records load).
+    useEffect(() => {
+        if (total === 0 || pendingRestore.current) return;
+        saveLastPosition(table.id, {
+            recordIndex: Math.floor(currentIndex / pageCount),
+            pageIndex: currentIndex % pageCount,
+        });
+    }, [table.id, currentIndex, pageCount, total]);
 
     const safeIndex = Math.min(Math.max(currentIndex, 0), Math.max(total - 1, 0));
     const recordFor = (idx) => records[Math.floor(idx / pageCount)];
