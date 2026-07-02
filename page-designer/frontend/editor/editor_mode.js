@@ -1,9 +1,11 @@
-// Editor (edit-mode) orchestrator: page tabs + palette + interactive canvas +
-// right-hand inspector / page-settings. The document is config.pages (one entry per
-// page); the editor edits the active page. GlobalConfig (optimistic) is the source
-// of truth; an in-flight drag renders from a local override and commits on release.
+// Editor (edit-mode) orchestrator: palette + interactive canvas + right-hand
+// inspector / page-settings. The document is config.pages (one entry per page),
+// rendered as a continuous vertical stack with an "add page" tile at the bottom.
+// The "active" page is whichever page holds the current selection/interaction.
+// GlobalConfig (optimistic) is the source of truth; an in-flight drag renders from
+// a local override (scoped to its page index) and commits on release.
 
-import {useEffect, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
 import {EditorCanvas} from './editor_canvas.js';
 import {ElementInspector, MultiInspector} from './element_inspector.js';
 import {PageSettingsPanel} from './page_settings_panel.js';
@@ -37,10 +39,14 @@ import {
     UndoIcon,
     RedoIcon,
     PlusIcon,
+    TrashIcon,
     FieldIcon,
 } from '../ui/icons.js';
 import {ZoomControl} from '../ui/zoom_control.js';
 import {usePrintMode} from '../view/use_print_mode.js';
+
+// Stable empty selection for non-active pages (avoids a new array each render).
+const EMPTY_IDS = [];
 
 export function EditorMode({table, records, config, onPreview, showGrid, onToggleGrid}) {
     const [selectedIds, setSelectedIds] = useState([]);
@@ -52,8 +58,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const [zoom, setZoom] = useState(null);
     const [pageIndex, setPageIndex] = useState(0);
     const [centerRef, centerWidth] = useContainerWidth();
+    // Set when a page is added so we scroll it into view once it actually renders
+    // (the GlobalConfig write + re-render is async; a fixed timeout races it).
+    const pendingScrollBottom = useRef(false);
+    const bottomRef = useRef(null); // sentinel below the last page, for scroll-into-view
 
-    const fieldList = table.fields.map((f) => ({id: f.id, name: f.name}));
+    const fieldList = table.fields.map((f) => ({id: f.id, name: f.name, type: f.config.type}));
 
     const {printing, printNow} = usePrintMode(config.page);
 
@@ -62,13 +72,24 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         setPageIndex((i) => Math.min(Math.max(i, 0), config.pages.length - 1));
     }, [config.pages.length]);
 
+    // After a page is added and has rendered, scroll it into view. scrollIntoView on
+    // a bottom sentinel finds whatever ancestor actually scrolls (ours or the host).
+    useEffect(() => {
+        if (!pendingScrollBottom.current) return;
+        pendingScrollBottom.current = false;
+        bottomRef.current?.scrollIntoView({behavior: 'smooth', block: 'end'});
+    }, [config.pages.length]);
+
     const activeIndex = Math.min(Math.max(pageIndex, 0), config.pages.length - 1);
     const pageEntry = config.pages[activeIndex];
     // Effective page for the active page = shared geometry + this page's background.
     const effectivePage = {...config.page, backgroundColor: pageEntry.backgroundColor};
     const currentLayout = pageEntry.layout;
 
-    const layout = dragOverride || currentLayout;
+    // A drag override belongs to one page; only that page renders from it.
+    const layoutFor = (i) =>
+        dragOverride && dragOverride.index === i ? dragOverride.layout : config.pages[i].layout;
+    const layout = layoutFor(activeIndex);
     const record = records[0] || null;
     const selected = selectedIds.length === 1 ? layout.elementsById[selectedIds[0]] : null;
 
@@ -88,16 +109,20 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         }
     };
 
-    const persist = (nextLayout) => {
-        setDragOverride(nextLayout);
-        config.setLayout(activeIndex, nextLayout).then(() => {
-            setDragOverride(null);
-            setError(null);
-        }, (err) => {
-            setDragOverride(null);
-            onSaveError(err);
-        });
+    const persistTo = (index, nextLayout) => {
+        setDragOverride({index, layout: nextLayout});
+        config.setLayout(index, nextLayout).then(
+            () => {
+                setDragOverride(null);
+                setError(null);
+            },
+            (err) => {
+                setDragOverride(null);
+                onSaveError(err);
+            },
+        );
     };
+    const persist = (nextLayout) => persistTo(activeIndex, nextLayout);
 
     // Page-settings panel emits single-key patches: background is per-page, the rest
     // (size/orientation) is shared geometry.
@@ -119,6 +144,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         const target = config.pages.length; // new page's index after append
         config.addPage().then(() => {
             setError(null);
+            pendingScrollBottom.current = true; // scrolled in by the effect once it renders
             switchPage(target);
         }, onSaveError);
     };
@@ -178,10 +204,10 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
 
     // Drop fields from the rail at the cursor: stack them down from the drop point,
     // clamped to the page. One field = placed exactly where dropped.
-    const handleDropFields = (fieldIds, x, y) => {
+    const handleDropFields = (index, fieldIds, x, y) => {
         if (!fieldIds || !fieldIds.length) return;
         const size = defaultSizeForKind(ElementKind.FIELD);
-        let next = currentLayout;
+        let next = config.pages[index].layout;
         const newIds = [];
         fieldIds.forEach((fieldId, i) => {
             const clamped = clampElementToPage(
@@ -198,7 +224,8 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             next = withEl;
             newIds.push(element.id);
         });
-        persist(next);
+        setPageIndex(index);
+        persistTo(index, next);
         setSelectedIds(newIds);
         setRightTab('element');
         setInspectorOpen(true);
@@ -406,50 +433,6 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                     </div>
                 </div>
 
-                {/* Page tabs: each record renders every page in order. */}
-                <div className="pd-screen-only flex items-center gap-1 overflow-x-auto border-b border-gray-gray200 bg-gray-gray25 px-3 py-1 dark:border-gray-gray700 dark:bg-gray-gray800">
-                    {config.pages.map((_, i) => {
-                        const active = i === activeIndex;
-                        return (
-                            <div
-                                key={i}
-                                className={
-                                    'group flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ' +
-                                    (active
-                                        ? 'bg-blue-blueLight2 text-blue-blueDark1 dark:bg-blue-blueDark1 dark:text-white'
-                                        : 'text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700')
-                                }
-                            >
-                                <button type="button" onClick={() => switchPage(i)}>
-                                    Page {i + 1}
-                                </button>
-                                {multiPage ? (
-                                    <button
-                                        type="button"
-                                        aria-label={`Delete page ${i + 1}`}
-                                        title="Delete page"
-                                        onClick={() => handleRemovePage(i)}
-                                        className={
-                                            (active ? 'inline-flex ' : 'hidden group-hover:inline-flex ') +
-                                            'items-center opacity-70 hover:opacity-100'
-                                        }
-                                    >
-                                        <CloseIcon size={12} />
-                                    </button>
-                                ) : null}
-                            </div>
-                        );
-                    })}
-                    <button
-                        type="button"
-                        onClick={handleAddPage}
-                        className="flex shrink-0 items-center gap-1 rounded-md px-2 py-1 text-xs font-medium text-gray-gray500 hover:bg-gray-gray100 hover:text-gray-gray700 dark:hover:bg-gray-gray700"
-                    >
-                        <PlusIcon size={12} />
-                        Add page
-                    </button>
-                </div>
-
                 {error ? (
                     <div className="pd-screen-only flex items-center gap-2 bg-red-redLight2 px-3 py-1.5 text-xs text-red-redDark1">
                         <WarningIcon size={14} />
@@ -494,23 +477,68 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
 
                     <div className="relative flex min-w-0 flex-1 flex-col">
                         <div ref={centerRef} className="pd-desk min-w-0 flex-1 overflow-auto">
-                            <div className="flex min-h-full w-max min-w-full items-start justify-center p-6">
-                                <EditorCanvas
-                                    page={effectivePage}
-                                    layout={layout}
-                                    record={record}
-                                    table={table}
-                                    selectedIds={selectedIds}
-                                    scale={scale}
-                                    showGrid={showGrid}
-                                    onSelect={handleSelect}
-                                    onToggle={handleToggle}
-                                    onPreview={(patches) =>
-                                        setDragOverride(updateElements(currentLayout, patches))
-                                    }
-                                    onCommit={(patches) => persist(updateElements(currentLayout, patches))}
-                                    onDropFields={handleDropFields}
-                                />
+                            <div className="flex min-h-full w-max min-w-full flex-col items-center gap-14 p-6">
+                                {config.pages.map((p, i) => (
+                                    <div key={i} className="flex flex-col" style={{width: pageW * scale}}>
+                                        <div className="relative z-10 mb-2 flex items-center justify-between px-0.5">
+                                            <span className="text-[11px] font-medium text-gray-gray400">
+                                                Page {i + 1}
+                                            </span>
+                                            {multiPage ? (
+                                                <button
+                                                    type="button"
+                                                    aria-label={`Delete page ${i + 1}`}
+                                                    title="Delete page"
+                                                    onClick={() => handleRemovePage(i)}
+                                                    className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
+                                                >
+                                                    <TrashIcon size={15} />
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                        <EditorCanvas
+                                            page={{...config.page, backgroundColor: p.backgroundColor}}
+                                            layout={layoutFor(i)}
+                                            record={record}
+                                            table={table}
+                                            selectedIds={i === activeIndex ? selectedIds : EMPTY_IDS}
+                                            scale={scale}
+                                            showGrid={showGrid}
+                                            onSelect={(ids) => {
+                                                setPageIndex(i);
+                                                handleSelect(ids);
+                                            }}
+                                            onToggle={(id) => {
+                                                setPageIndex(i);
+                                                handleToggle(id);
+                                            }}
+                                            onPreview={(patches) =>
+                                                setDragOverride({
+                                                    index: i,
+                                                    layout: updateElements(config.pages[i].layout, patches),
+                                                })
+                                            }
+                                            onCommit={(patches) =>
+                                                persistTo(i, updateElements(config.pages[i].layout, patches))
+                                            }
+                                            onDropFields={(fieldIds, x, y) => handleDropFields(i, fieldIds, x, y)}
+                                        />
+                                    </div>
+                                ))}
+                                {config.pages.length < config.maxPages ? (
+                                    <button
+                                        type="button"
+                                        onClick={handleAddPage}
+                                        className="relative z-10 flex flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-gray-gray200 text-gray-gray400 transition-colors hover:border-blue-blue hover:text-blue-blue dark:border-gray-gray700"
+                                        style={{width: pageW * scale, height: Math.max(96, pageH * scale * 0.14)}}
+                                    >
+                                        <PlusIcon size={22} />
+                                        <span className="text-xs font-medium">Add page</span>
+                                    </button>
+                                ) : null}
+                                {/* Spacer so the last page / add tile can scroll clear of the
+                                    floating zoom pill (which is pinned bottom-center). */}
+                                <div ref={bottomRef} aria-hidden="true" className="h-20 shrink-0" />
                             </div>
                         </div>
                         <ZoomControl

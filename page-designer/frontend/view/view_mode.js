@@ -347,7 +347,6 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                             record={presentRecord}
                             table={table}
                             scale={presentScale}
-                            interactive
                         />
                     </ScaledPage>
 

@@ -70,8 +70,14 @@ export function defaultStyle() {
         // Linked-record table styling: header cell fill and zebra row shading.
         tableHeaderColor: '#f3f3f5',
         tableStripeRows: true,
-        // How a single-select value renders: 'text' or 'pill' (colored chip).
+        // How a select value renders: 'text', 'pill' (colored chip), or 'stepper'
+        // (single-select only). Text/pill apply to single- and multi-select.
         selectDisplay: 'text',
+        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'.
+        stepperVariant: 'radio',
+        // Stepper colors: accent = completed/active steps + connectors; track = pending.
+        stepperColor: '#2d7ff9',
+        stepperTrackColor: '#cfd0d3',
         // Let viewers edit this field's value inline (view mode only, supported types).
         editable: false,
         lineColor: '#1d1f25',

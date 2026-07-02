@@ -158,6 +158,7 @@ export function useConfigDocument() {
     return {
         page,
         pages,
+        maxPages: MAX_PAGES,
         isEditable,
         setLayout,
         setBackground,

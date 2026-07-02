@@ -4,22 +4,10 @@
 
 import {useState} from 'react';
 import {Button} from '../ui/primitives.js';
+import {FieldTypeIcon} from '../ui/field_icons.js';
 
 // Payload key for a field drag (read by EditorCanvas's onDrop).
 export const FIELD_DRAG_TYPE = 'application/x-pd-fields';
-
-function GripIcon() {
-    return (
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
-            <circle cx="9" cy="5" r="1.6" />
-            <circle cx="15" cy="5" r="1.6" />
-            <circle cx="9" cy="12" r="1.6" />
-            <circle cx="15" cy="12" r="1.6" />
-            <circle cx="9" cy="19" r="1.6" />
-            <circle cx="15" cy="19" r="1.6" />
-        </svg>
-    );
-}
 
 export function FieldRail({fields, onAddFields}) {
     const [selected, setSelected] = useState(() => new Set());
@@ -74,8 +62,8 @@ export function FieldRail({fields, onAddFields}) {
                             onClick={(e) => e.stopPropagation()}
                             className="h-3.5 w-3.5 shrink-0 accent-blue-blue"
                         />
-                        <span className="shrink-0 text-gray-gray400 dark:text-gray-gray500">
-                            <GripIcon />
+                        <span className="shrink-0 text-gray-gray500 dark:text-gray-gray400" title={f.type}>
+                            <FieldTypeIcon type={f.type} size={16} />
                         </span>
                         <span className="min-w-0 flex-1 break-words">{f.name}</span>
                     </div>

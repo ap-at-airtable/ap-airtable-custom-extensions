@@ -84,12 +84,22 @@ export function PageCanvas({
                                 valueKey = null;
                             }
                         }
+                        // An editable field's affordance (ring/pill/input) can be taller
+                        // than a small element box; let it spill instead of clipping in
+                        // interactive view. Print and the editor stay clipped.
+                        const editableInteractive = interactive && element.style.editable;
+                        const contentStyle = elementContentStyle(element.style);
+                        if (editableInteractive) contentStyle.overflow = 'visible';
                         return (
                             <div
                                 key={element.id}
-                                style={{...elementBoxStyle(element), opacity: visible ? undefined : 0.4}}
+                                style={{
+                                    ...elementBoxStyle(element),
+                                    opacity: visible ? undefined : 0.4,
+                                    zIndex: editableInteractive ? 1 : undefined,
+                                }}
                             >
-                                <div style={elementContentStyle(element.style)}>
+                                <div style={contentStyle}>
                                     <ElementBoundary
                                         resetKey={element}
                                         fallback={<ElementRenderError editor={editor} />}

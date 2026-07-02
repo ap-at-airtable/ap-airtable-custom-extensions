@@ -16,14 +16,8 @@ import {
     BarcodeFormat,
     LinkedRecordDisplay,
 } from '../domain/element_types.mjs';
-import {
-    NumberFormat,
-    ConditionOp,
-    CONDITION_OP_LABELS,
-    VALUELESS_OPS,
-    effectiveNumberFormat,
-} from '../domain/dynamic_content.mjs';
-import {isEditableFieldType} from '../domain/editable_fields.mjs';
+import {ConditionOp, CONDITION_OP_LABELS, VALUELESS_OPS} from '../domain/dynamic_content.mjs';
+import {isEditableFieldType, editableInputKind} from '../domain/editable_fields.mjs';
 import {AlignMode, DistributeAxis} from '../domain/alignment.mjs';
 import {
     IconButton,
@@ -128,22 +122,6 @@ const IMAGE_FIT_OPTIONS = [
 
 const BARCODE_FORMAT_OPTIONS = Object.values(BarcodeFormat).map((v) => ({value: v, label: v}));
 
-const NUMBER_FORMAT_OPTIONS = [
-    {value: NumberFormat.AUTO, label: 'Auto'},
-    {value: NumberFormat.NUMBER, label: 'Number'},
-    {value: NumberFormat.CURRENCY, label: 'Currency'},
-    {value: NumberFormat.PERCENT, label: 'Percent'},
-];
-
-const NUMERIC_FIELD_TYPES = new Set([
-    FieldType.NUMBER,
-    FieldType.CURRENCY,
-    FieldType.PERCENT,
-    FieldType.COUNT,
-    FieldType.AUTO_NUMBER,
-    FieldType.RATING,
-    FieldType.DURATION,
-]);
 
 const OP_OPTIONS = Object.entries(CONDITION_OP_LABELS).map(([value, label]) => ({value, label}));
 
@@ -222,19 +200,28 @@ export function ElementInspector({
         boundField.config.type === FieldType.MULTIPLE_RECORD_LINKS;
     const isSingleSelectField =
         kind === ElementKind.FIELD && boundField && boundField.config.type === FieldType.SINGLE_SELECT;
+    const isSelectField =
+        kind === ElementKind.FIELD &&
+        boundField &&
+        (boundField.config.type === FieldType.SINGLE_SELECT ||
+            boundField.config.type === FieldType.MULTIPLE_SELECTS);
     const isEditableField =
         kind === ElementKind.FIELD && boundField && isEditableFieldType(boundField.config.type);
-    // Number/currency formatting only applies to numeric fields.
-    const isNumericField = boundField && NUMERIC_FIELD_TYPES.has(boundField.config.type);
-    // Percent style multiplies by 100 (0.5 -> "50%"), so it only makes sense on a
-    // percent field; offering it elsewhere silently turns a "50" into "5,000%".
-    const isPercentField = boundField && boundField.config.type === FieldType.PERCENT;
-    const numberFormatOptions = isPercentField
-        ? NUMBER_FORMAT_OPTIONS
-        : NUMBER_FORMAT_OPTIONS.filter((o) => o.value !== NumberFormat.PERCENT);
-    // Degrade a stale 'percent' setting to Auto so the control matches the render
-    // when the element is bound to a non-percent field.
-    const effectiveFormat = effectiveNumberFormat(style.numberFormat, isPercentField);
+
+    // What the bound field renders as, so we only show style controls that do
+    // something. Checkbox/rating render a glyph; pill/stepper have their own look;
+    // text-like fields (and Text elements) take the full font/color/align set.
+    const inputKind = boundField ? editableInputKind(boundField.config.type) : null;
+    const isCheckboxField = inputKind === 'checkbox';
+    const isRatingField = inputKind === 'rating';
+    const selectDisplay = style.selectDisplay || 'text';
+    const isPillOrStepper = isSelectField && (selectDisplay === 'pill' || selectDisplay === 'stepper');
+    const rendersStyledText =
+        kind === ElementKind.TEXT ||
+        (kind === ElementKind.FIELD && !!boundField && !isCheckboxField && !isRatingField && !isPillOrStepper);
+    // textAlign only moves text and pills; it's a no-op for checkbox/rating/stepper.
+    const showHAlign = rendersStyledText || (isSelectField && selectDisplay === 'pill');
+
     const linkedTableId =
         isLinkedField && boundField.config.options ? boundField.config.options.linkedTableId : null;
     const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
@@ -269,6 +256,50 @@ export function ElementInspector({
                             placeholder="Select a field"
                         />
                     </Field>
+                    {/* How a select value is shown (the field's own formatting handles
+                        everything else: currency, percent, dates). */}
+                    {isSelectField ? (
+                        <Field label="Display">
+                            <Segmented
+                                label="Display"
+                                value={style.selectDisplay || 'text'}
+                                options={[
+                                    {value: 'text', label: 'Text'},
+                                    {value: 'pill', label: 'Pill'},
+                                    // Stepper needs the field's choice order → single-select only.
+                                    ...(isSingleSelectField ? [{value: 'stepper', label: 'Stepper'}] : []),
+                                ]}
+                                onChange={(v) => setStyle({selectDisplay: v})}
+                            />
+                        </Field>
+                    ) : null}
+                    {isSingleSelectField && style.selectDisplay === 'stepper' ? (
+                        <>
+                            <Field label="Stepper style">
+                                <Segmented
+                                    label="Stepper style"
+                                    value={style.stepperVariant || 'radio'}
+                                    options={[
+                                        {value: 'radio', label: 'Radio'},
+                                        {value: 'number', label: 'Number'},
+                                    ]}
+                                    onChange={(v) => setStyle({stepperVariant: v})}
+                                />
+                            </Field>
+                            <Field label="Active color">
+                                <ColorInput
+                                    value={style.stepperColor || '#2d7ff9'}
+                                    onChange={(c) => setStyle({stepperColor: c})}
+                                />
+                            </Field>
+                            <Field label="Track color">
+                                <ColorInput
+                                    value={style.stepperTrackColor || '#cfd0d3'}
+                                    onChange={(c) => setStyle({stepperTrackColor: c})}
+                                />
+                            </Field>
+                        </>
+                    ) : null}
                     {isLinkedField ? (
                         <Field label="Linked records">
                             <Segmented
@@ -330,61 +361,6 @@ export function ElementInspector({
                 </Section>
             ) : null}
 
-            {kind === ElementKind.FIELD && !isLinkedField ? (
-                <Section title="Format">
-                    {isSingleSelectField ? (
-                        <Field label="Display">
-                            <Segmented
-                                label="Display"
-                                value={style.selectDisplay || 'text'}
-                                options={[
-                                    {value: 'text', label: 'Text'},
-                                    {value: 'pill', label: 'Pill'},
-                                ]}
-                                onChange={(v) => setStyle({selectDisplay: v})}
-                            />
-                        </Field>
-                    ) : null}
-                    {isNumericField ? (
-                        <>
-                            <Field label="Number format" hint="Auto uses the field's own formatting.">
-                                <Select
-                                    value={effectiveFormat}
-                                    options={numberFormatOptions}
-                                    onChange={(numberFormat) => setStyle({numberFormat})}
-                                />
-                            </Field>
-                            {effectiveFormat !== NumberFormat.AUTO ? (
-                                <Field label="Decimals">
-                                    <NumberInput
-                                        value={style.decimals}
-                                        min={0}
-                                        max={10}
-                                        onChange={(decimals) => setStyle({decimals})}
-                                    />
-                                </Field>
-                            ) : null}
-                        </>
-                    ) : null}
-                    <Row>
-                        <Field label="Prefix">
-                            <TextInput
-                                value={style.prefix}
-                                onChange={(prefix) => setStyle({prefix})}
-                                placeholder="$"
-                            />
-                        </Field>
-                        <Field label="Suffix">
-                            <TextInput
-                                value={style.suffix}
-                                onChange={(suffix) => setStyle({suffix})}
-                                placeholder="USD"
-                            />
-                        </Field>
-                    </Row>
-                </Section>
-            ) : null}
-
             {kind === ElementKind.IMAGE ? (
                 <Section title="Image" defaultOpen>
                     <Field label="Source">
@@ -440,13 +416,15 @@ export function ElementInspector({
 
             {showTypography ? (
                 <Section title="Typography" defaultOpen>
-                    <Field label="Font">
-                        <Select
-                            value={style.fontFamily}
-                            options={FONT_OPTIONS}
-                            onChange={(fontFamily) => setStyle({fontFamily})}
-                        />
-                    </Field>
+                    {rendersStyledText ? (
+                        <Field label="Font">
+                            <Select
+                                value={style.fontFamily}
+                                options={FONT_OPTIONS}
+                                onChange={(fontFamily) => setStyle({fontFamily})}
+                            />
+                        </Field>
+                    ) : null}
                     <Row>
                         <Field label="Size">
                             <NumberInput
@@ -456,47 +434,53 @@ export function ElementInspector({
                                 onChange={(fontSize) => setStyle({fontSize})}
                             />
                         </Field>
-                        <Row className="gap-0.5 pt-4">
-                            <IconButton
-                                icon={BoldIcon}
-                                label="Bold"
-                                active={style.fontWeight === 'bold'}
-                                onClick={() =>
-                                    setStyle({
-                                        fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold',
-                                    })
-                                }
-                            />
-                            <IconButton
-                                icon={ItalicIcon}
-                                label="Italic"
-                                active={style.fontStyle === 'italic'}
-                                onClick={() =>
-                                    setStyle({
-                                        fontStyle:
-                                            style.fontStyle === 'italic' ? 'normal' : 'italic',
-                                    })
-                                }
-                            />
-                            <IconButton
-                                icon={UnderlineIcon}
-                                label="Underline"
-                                active={!!style.underline}
-                                onClick={() => setStyle({underline: !style.underline})}
-                            />
-                        </Row>
+                        {rendersStyledText ? (
+                            <Row className="gap-0.5 pt-4">
+                                <IconButton
+                                    icon={BoldIcon}
+                                    label="Bold"
+                                    active={style.fontWeight === 'bold'}
+                                    onClick={() =>
+                                        setStyle({
+                                            fontWeight: style.fontWeight === 'bold' ? 'normal' : 'bold',
+                                        })
+                                    }
+                                />
+                                <IconButton
+                                    icon={ItalicIcon}
+                                    label="Italic"
+                                    active={style.fontStyle === 'italic'}
+                                    onClick={() =>
+                                        setStyle({
+                                            fontStyle:
+                                                style.fontStyle === 'italic' ? 'normal' : 'italic',
+                                        })
+                                    }
+                                />
+                                <IconButton
+                                    icon={UnderlineIcon}
+                                    label="Underline"
+                                    active={!!style.underline}
+                                    onClick={() => setStyle({underline: !style.underline})}
+                                />
+                            </Row>
+                        ) : null}
                     </Row>
-                    <Field label="Color">
-                        <ColorInput value={style.color} onChange={(color) => setStyle({color})} />
-                    </Field>
-                    <Field label="Horizontal align">
-                        <Segmented
-                            label="Horizontal align"
-                            value={style.textAlign}
-                            options={TEXT_ALIGN_OPTIONS}
-                            onChange={(textAlign) => setStyle({textAlign})}
-                        />
-                    </Field>
+                    {rendersStyledText ? (
+                        <Field label="Color">
+                            <ColorInput value={style.color} onChange={(color) => setStyle({color})} />
+                        </Field>
+                    ) : null}
+                    {showHAlign ? (
+                        <Field label="Horizontal align">
+                            <Segmented
+                                label="Horizontal align"
+                                value={style.textAlign}
+                                options={TEXT_ALIGN_OPTIONS}
+                                onChange={(textAlign) => setStyle({textAlign})}
+                            />
+                        </Field>
+                    ) : null}
                     <Field label="Vertical align">
                         <Segmented
                             label="Vertical align"

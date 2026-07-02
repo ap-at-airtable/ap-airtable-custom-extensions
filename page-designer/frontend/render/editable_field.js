@@ -14,6 +14,8 @@ import {
 } from '../domain/editable_fields.mjs';
 import {EditIcon} from '../ui/icons.js';
 import {COARSE} from '../ui/pointer.js';
+import {ChoicePill} from './select_pill.js';
+import {SelectStepper} from './select_stepper.js';
 
 const ACCENT = 'rgba(22,110,225';
 const ACCENT_SOLID = '#166ee1';
@@ -23,7 +25,17 @@ const MAX_OPTION_ROWS = 100; // cap rendered picker rows (rosters can be huge)
 const RATING_GLYPH = {star: '★', heart: '♥', thumbsUp: '👍', flag: '⚑'};
 const SAVE_ERROR = "Couldn't save — you may not have edit access, or the change was rejected.";
 
-export function EditableField({field, record, table, css}) {
+export function EditableField({
+    field,
+    record,
+    table,
+    css,
+    selectDisplay = 'text',
+    stepperVariant = 'radio',
+    stepperColor,
+    stepperTrackColor,
+}) {
+    const isPill = selectDisplay === 'pill';
     const base = useBase();
     const kind = editableInputKind(field.type);
     // Percent cells are stored as decimals (0.0875) but shown as "8.75%". Edit in
@@ -161,19 +173,28 @@ export function EditableField({field, record, table, css}) {
         </div>
     );
 
+    // A chip behind the pencil so it reads on any page background: the light fill
+    // pops on dark pages, the border + shadow define it on light ones.
     const pencil = showRest ? (
         <span
             style={{
                 position: 'absolute',
                 top: '50%',
-                right: COARSE ? 8 : 6,
+                right: COARSE ? 4 : 3,
                 transform: 'translateY(-50%)',
                 display: 'flex',
-                color: `${ACCENT},0.5)`,
+                alignItems: 'center',
+                justifyContent: 'center',
+                width: COARSE ? 22 : 18,
+                height: COARSE ? 22 : 18,
+                borderRadius: '50%',
+                background: 'rgba(255,255,255,0.95)',
+                boxShadow: '0 0 0 1px rgba(0,0,0,0.12), 0 1px 2px rgba(0,0,0,0.18)',
+                color: ACCENT_SOLID,
                 pointerEvents: 'none',
             }}
         >
-            <EditIcon size={COARSE ? 14 : 11} />
+            <EditIcon size={COARSE ? 13 : 11} />
         </span>
     ) : null;
 
@@ -194,9 +215,17 @@ export function EditableField({field, record, table, css}) {
             }
         },
     });
-    const restStyle = (cursor) => ({...css, cursor, minHeight: '1em', outline: 'none', touchAction: 'manipulation'});
-    const selectStyle = {...css, color: EDIT_TEXT, width: '100%', border: 'none', background: 'transparent', cursor: 'pointer'};
-
+    const restStyle = (cursor) => ({
+        ...css,
+        cursor,
+        minHeight: '1em',
+        outline: 'none',
+        touchAction: 'manipulation',
+        // Reserve room for the hover pencil chip so it never sits over the value
+        // (e.g. a right-aligned field). Only while the affordance shows, so nothing
+        // shifts at rest on desktop.
+        paddingRight: showRest ? (COARSE ? 30 : 24) : undefined,
+    });
     const openPanel = () => {
         const r = frameRef.current.getBoundingClientRect();
         const vw = window.innerWidth;
@@ -214,9 +243,9 @@ export function EditableField({field, record, table, css}) {
         setEditing(true);
     };
     const optionLabel = (o) => o.name || o.email || '';
-    const clickToOpen = () => (
+    const clickToOpen = (content) => (
         <div onClick={openPanel} {...focusableRest(openPanel)} aria-haspopup="listbox" aria-expanded={!!anchor} style={restStyle('pointer')}>
-            {record.getCellValueAsString(field) || ' '}
+            {content ?? (record.getCellValueAsString(field) || ' ')}
             {pencil}
         </div>
     );
@@ -421,23 +450,38 @@ export function EditableField({field, record, table, css}) {
     // --- Single select: native dropdown (small list, overlay escapes clipping) ---
 
     if (kind === 'select') {
+        // Stepper is its own control (click a step to set the value) — no popover.
+        if (selectDisplay === 'stepper') {
+            return frame(
+                <SelectStepper
+                    field={field}
+                    record={record}
+                    css={css}
+                    variant={stepperVariant}
+                    accent={stepperColor}
+                    track={stepperTrackColor}
+                    saving={saving}
+                    onChange={(id) => commit(id ? {id} : null)}
+                />,
+            );
+        }
         const choices = (field.config && field.config.options && field.config.options.choices) || [];
         const current = record.getCellValue(field);
+        // Keep the pill at rest (respecting choice color); the picker opens on
+        // click. Falls back to plain text when display is Text.
+        const resting = isPill && current ? <ChoicePill field={field} choice={current} css={css} /> : undefined;
         return frame(
-            <select
-                aria-label={label}
-                value={current ? current.id : ''}
-                disabled={saving}
-                onChange={(e) => commit(e.target.value ? {id: e.target.value} : null)}
-                style={selectStyle}
-            >
-                <option value="">—</option>
-                {choices.map((c) => (
-                    <option key={c.id} value={c.id}>
-                        {c.name}
-                    </option>
-                ))}
-            </select>,
+            <>
+                {clickToOpen(resting)}
+                {popover(choices, {
+                    multi: false,
+                    selectedIds: current ? new Set([current.id]) : new Set(),
+                    onPick: (id) => {
+                        commit(id ? {id} : null);
+                        setAnchor(null);
+                    },
+                })}
+            </>,
         );
     }
 
@@ -512,9 +556,18 @@ export function EditableField({field, record, table, css}) {
             const next = cur.some((x) => x.id === id) ? cur.filter((x) => x.id !== id) : [...cur, {id}];
             commit(next.map((x) => ({id: x.id})), true);
         };
+        // Pill display applies to multi-SELECT choices (colored), not collaborators.
+        const resting =
+            kind === 'multiselect' && isPill && current.length ? (
+                <span style={{display: 'inline-flex', flexWrap: 'wrap', gap: '0.3em', maxWidth: '100%'}}>
+                    {current.map((c, i) => (
+                        <ChoicePill key={i} field={field} choice={c} css={css} />
+                    ))}
+                </span>
+            ) : undefined;
         return frame(
             <>
-                {clickToOpen()}
+                {clickToOpen(resting)}
                 {popover(options, {multi: true, selectedIds: currentIds, onPick: toggle})}
             </>,
         );
