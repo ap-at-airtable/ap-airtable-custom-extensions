@@ -23,13 +23,17 @@ This is a **custom interface extension** — it runs on an Interface page (via a
 
     ![Create extension: keep the Hello world template selected](assets/create-extension.png)
 
-    Airtable then shows a scaffold command for your new extension, like:
+    You land on your extension's **Development setup** tab, which lists every command below ready to copy — CLI install, token setup, and the scaffold command with your extension's block ID filled in:
+
+    ![Development setup: copyable CLI, token, scaffold, run, and release commands](assets/development-setup.png)
 
     ```bash
+    npm install -g @airtable/blocks-cli   # once
+    block set-api-key                     # once: paste a personal access token with the block:manage scope
     block init NONE/blkYourBlockId --template=https://github.com/Airtable/interface-extensions-hello-world my_extension
     ```
 
-    Run it (it needs the [Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started): `npm install -g @airtable/blocks-cli`). You now have a working scaffold wired to *your* extension, with dependencies installed.
+    After `block init` you have a working scaffold wired to *your* extension, with dependencies installed.
 
 2. **Drop in this code.** Replace the scaffold's `frontend/` folder with the `frontend/` folder from this repo, and make sure its `block.json` points at `frontend/index.js` (this repo's `block.json` already does — you can copy that too).
 
