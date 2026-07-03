@@ -73,21 +73,13 @@ export function defaultStyle() {
         // How a select value renders: 'text', 'pill' (colored chip), or 'stepper'
         // (single-select only). Text/pill apply to single- and multi-select.
         selectDisplay: 'text',
-        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'.
+        // Stepper style when selectDisplay==='stepper': 'radio' or 'number'. The
+        // selected step is drawn in its choice's own color (no separate setting).
         stepperVariant: 'radio',
-        // Stepper colors: accent = completed/active steps + connectors; track = pending.
-        stepperColor: '#2d7ff9',
-        stepperTrackColor: '#cfd0d3',
         // Let viewers edit this field's value inline (view mode only, supported types).
         editable: false,
         lineColor: '#1d1f25',
         lineThickness: 1,
-        // Value formatting for FIELD elements (numberFormat 'auto' = the field's
-        // own display string).
-        numberFormat: 'auto',
-        decimals: null,
-        prefix: '',
-        suffix: '',
     };
 }
 
@@ -126,8 +118,6 @@ export function makeElement({id, kind, x, y, fieldId = null, overrides = {}}) {
         linkedColumns: [],
         // Per-column width fractions (fieldId -> fraction); missing = equal share.
         linkedColumnWidths: {},
-        // Conditional rules ({visibility, color}); null = always shown, base color.
-        rules: null,
         style: defaultStyle(),
     };
     return {...base, ...overrides, style: {...base.style, ...(overrides.style ?? {})}};
@@ -142,13 +132,22 @@ export function hydrateElement(raw) {
         return null;
     }
     const base = makeElement({id: raw.id, kind: raw.kind, x: 0, y: 0});
+    const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
     return {
         ...base,
         ...raw,
-        // Sanitize geometry: a corrupt/legacy non-numeric x/y would otherwise pass
-        // through and break absolute positioning.
-        x: typeof raw.x === 'number' ? raw.x : 0,
-        y: typeof raw.y === 'number' ? raw.y : 0,
+        // Sanitize everything the renderer does math on: corrupt/legacy values
+        // (non-numeric geometry, non-array columns) must not reach layout code.
+        x: num(raw.x, 0),
+        y: num(raw.y, 0),
+        width: Math.max(1, num(raw.width, base.width)),
+        height: Math.max(1, num(raw.height, base.height)),
+        rotation: num(raw.rotation, 0),
+        linkedColumns: Array.isArray(raw.linkedColumns) ? raw.linkedColumns : [],
+        linkedColumnWidths:
+            raw.linkedColumnWidths && typeof raw.linkedColumnWidths === 'object' && !Array.isArray(raw.linkedColumnWidths)
+                ? raw.linkedColumnWidths
+                : {},
         style: {...base.style, ...(raw.style && typeof raw.style === 'object' ? raw.style : {})},
     };
 }

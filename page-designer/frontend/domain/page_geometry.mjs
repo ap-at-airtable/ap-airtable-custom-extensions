@@ -84,7 +84,9 @@ export function getPageSizeInches(pageType) {
 // content onto blank extra pages (legacy behavior, preserved deliberately).
 export function getStandardPageSizePx(pageType, orientation) {
     const {width, height} = convertSizeFromInchesToPx(getPageSizeInches(pageType));
-    if (orientation === PageOrientation.LANDSCAPE) {
+    // Ignore a stale LANDSCAPE left over from a previous page type: slides are
+    // stored landscape already, so honoring it would flip them into portrait.
+    if (orientation === PageOrientation.LANDSCAPE && pageTypeSupportsOrientation(pageType)) {
         return {width: height, height: Math.floor(width)};
     }
     return {width, height: Math.floor(height)};

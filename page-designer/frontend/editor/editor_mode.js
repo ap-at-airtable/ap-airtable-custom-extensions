@@ -13,6 +13,7 @@ import {ElementPalette} from './element_palette.js';
 import {FieldRail} from './field_rail.js';
 import {PrintLayer} from '../view/print_layer.js';
 import {useContainerWidth} from '../ui/use_container_width.js';
+import {loadLastPosition, saveLastPosition} from '../state/last_position_store.js';
 import {resolvePageSizePx, snapToGrid, PAGE_GRID_SIZE} from '../domain/page_geometry.mjs';
 import {defaultSizeForKind, ElementKind} from '../domain/element_types.mjs';
 import {
@@ -40,6 +41,8 @@ import {
     RedoIcon,
     PlusIcon,
     TrashIcon,
+    ChevronUpIcon,
+    ChevronDownIcon,
     FieldIcon,
 } from '../ui/icons.js';
 import {ZoomControl} from '../ui/zoom_control.js';
@@ -56,20 +59,28 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const [inspectorOpen, setInspectorOpen] = useState(false);
     const [railOpen, setRailOpen] = useState(false);
     const [zoom, setZoom] = useState(null);
-    const [pageIndex, setPageIndex] = useState(0);
+    // Restore the page the user was last on (mode flips remount this component).
+    const [pageIndex, setPageIndex] = useState(() => loadLastPosition(table.id).pageIndex);
     const [centerRef, centerWidth] = useContainerWidth();
     // Set when a page is added so we scroll it into view once it actually renders
     // (the GlobalConfig write + re-render is async; a fixed timeout races it).
     const pendingScrollBottom = useRef(false);
     const bottomRef = useRef(null); // sentinel below the last page, for scroll-into-view
+    const restoredPageRef = useRef(null); // wrapper of the restored page, for the one-time scroll
+    const pageRefs = useRef([]); // page wrappers, for scroll-position targeting
+    const didRestoreScroll = useRef(false);
+    // Page index awaiting delete confirmation (a misclick shouldn't destroy a page).
+    const [confirmDeletePage, setConfirmDeletePage] = useState(null);
 
     const fieldList = table.fields.map((f) => ({id: f.id, name: f.name, type: f.config.type}));
 
     const {printing, printNow} = usePrintMode(config.page);
 
-    // Keep the active page index in range as pages are added/removed.
+    // Keep the active page index in range as pages are added/removed, and drop any
+    // pending delete confirmation (its index may now point at a different page).
     useEffect(() => {
         setPageIndex((i) => Math.min(Math.max(i, 0), config.pages.length - 1));
+        setConfirmDeletePage(null);
     }, [config.pages.length]);
 
     // After a page is added and has rendered, scroll it into view. scrollIntoView on
@@ -81,6 +92,20 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     }, [config.pages.length]);
 
     const activeIndex = Math.min(Math.max(pageIndex, 0), config.pages.length - 1);
+
+    useEffect(() => {
+        saveLastPosition(table.id, {pageIndex: activeIndex});
+    }, [table.id, activeIndex]);
+
+    // Bring the restored page into view once after mount (the stack starts at page
+    // 1). Wait for the first width measurement: fit-scale resizes the pages right
+    // after mount, which would leave an earlier scroll pointing mid-page.
+    useEffect(() => {
+        if (didRestoreScroll.current || centerWidth === 0) return;
+        didRestoreScroll.current = true;
+        if (activeIndex > 0) restoredPageRef.current?.scrollIntoView({block: 'start'});
+    }, [activeIndex, centerWidth]);
+
     const pageEntry = config.pages[activeIndex];
     // Effective page for the active page = shared geometry + this page's background.
     const effectivePage = {...config.page, backgroundColor: pageEntry.backgroundColor};
@@ -109,9 +134,9 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         }
     };
 
-    const persistTo = (index, nextLayout) => {
+    const persistTo = (index, nextLayout, coalesceKey) => {
         setDragOverride({index, layout: nextLayout});
-        config.setLayout(index, nextLayout).then(
+        config.setLayout(index, nextLayout, coalesceKey).then(
             () => {
                 setDragOverride(null);
                 setError(null);
@@ -122,7 +147,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             },
         );
     };
-    const persist = (nextLayout) => persistTo(activeIndex, nextLayout);
+    const persist = (nextLayout, coalesceKey) => persistTo(activeIndex, nextLayout, coalesceKey);
 
     // Page-settings panel emits single-key patches: background is per-page, the rest
     // (size/orientation) is shared geometry.
@@ -132,6 +157,32 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                 ? config.setBackground(activeIndex, patch.backgroundColor)
                 : config.setPageGeometry({...config.page, ...patch});
         write.then(() => setError(null), onSaveError);
+    };
+
+    // The page under the viewport center. Palette/rail adds land HERE, not on the
+    // last-clicked page: after scrolling, "the page I'm looking at" is the target.
+    const visiblePageIndex = () => {
+        const container = centerRef.current;
+        if (!container) return activeIndex;
+        const rect = container.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        let best = activeIndex;
+        let bestDist = Infinity;
+        pageRefs.current.forEach((el, i) => {
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            if (r.top <= midY && r.bottom >= midY) {
+                best = i;
+                bestDist = -Infinity;
+                return;
+            }
+            const d = Math.min(Math.abs(r.top - midY), Math.abs(r.bottom - midY));
+            if (d < bestDist) {
+                bestDist = d;
+                best = i;
+            }
+        });
+        return best;
     };
 
     const switchPage = (i) => {
@@ -155,13 +206,22 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         // Keep the same page active: shift down if we removed one before it, else clamp.
         setPageIndex((cur) => (i < cur ? cur - 1 : Math.min(cur, config.pages.length - 2)));
     };
+    // Move a page one slot (to = from ± 1). Keep the active page focused through the swap.
+    const handleMovePage = (from, to) => {
+        setDragOverride(null);
+        setConfirmDeletePage(null);
+        config.movePage(from, to).then(() => setError(null), onSaveError);
+        setPageIndex((cur) => (cur === from ? to : cur === to ? from : cur));
+    };
 
     const handleAdd = (kind) => {
+        const target = visiblePageIndex();
         const size = defaultSizeForKind(kind);
         const x = snapToGrid(Math.max(0, (pageW - size.width) / 2));
         const y = snapToGrid(Math.max(0, (pageH - size.height) / 3));
-        const {layout: next, element} = addNewElement(currentLayout, {kind, x, y});
-        persist(next);
+        const {layout: next, element} = addNewElement(layoutFor(target), {kind, x, y});
+        setPageIndex(target);
+        persistTo(target, next);
         setSelectedIds([element.id]);
         setRightTab('element');
         setInspectorOpen(true);
@@ -171,9 +231,11 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     // don't stack. Labels are shown so a freshly-populated page stays readable.
     const handleAddFields = (fieldIds) => {
         if (!fieldIds.length) return;
+        const target = visiblePageIndex();
+        const targetLayout = layoutFor(target);
         const size = defaultSizeForKind(ElementKind.FIELD);
         const margin = PAGE_GRID_SIZE * 2;
-        const existing = getOrderedElements(currentLayout);
+        const existing = getOrderedElements(targetLayout);
         const bottom = existing.reduce((m, el) => Math.max(m, el.y + el.height), 0);
         let startY = existing.length ? snapToGrid(bottom + PAGE_GRID_SIZE) : margin;
         if (startY + size.height > pageH - margin) startY = margin;
@@ -184,7 +246,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             itemHeight: size.height,
             startY,
         });
-        let next = currentLayout;
+        let next = targetLayout;
         const newIds = [];
         fieldIds.forEach((fieldId, i) => {
             const {layout: withEl, element} = addNewElement(next, {
@@ -196,7 +258,8 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             next = updateElement(withEl, element.id, {style: {showFieldLabel: true}});
             newIds.push(element.id);
         });
-        persist(next);
+        setPageIndex(target);
+        persistTo(target, next);
         setSelectedIds(newIds);
         setRightTab('element');
         setInspectorOpen(true);
@@ -253,7 +316,9 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             const el = next.elementsById[id];
             if (el) next = updateElement(next, id, clampElementToPage(el, pageW, pageH));
         }
-        persist(next);
+        // Inspector inputs stream per keystroke; coalesce them into one undo step
+        // per element. Everything else (drags, adds, z-order) snapshots per action.
+        persist(next, `el:${id}`);
     };
     const deleteSelected = () => {
         if (!selectedIds.length) return;
@@ -479,21 +544,74 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                         <div ref={centerRef} className="pd-desk min-w-0 flex-1 overflow-auto">
                             <div className="flex min-h-full w-max min-w-full flex-col items-center gap-14 p-6">
                                 {config.pages.map((p, i) => (
-                                    <div key={i} className="flex flex-col" style={{width: pageW * scale}}>
-                                        <div className="relative z-10 mb-2 flex items-center justify-between px-0.5">
+                                    <div
+                                        key={i}
+                                        ref={(el) => {
+                                            pageRefs.current[i] = el;
+                                            if (i === activeIndex) restoredPageRef.current = el;
+                                        }}
+                                        className="flex flex-col"
+                                        style={{width: pageW * scale}}
+                                    >
+                                        <div className="pointer-events-none relative z-10 mb-2 flex items-center justify-between px-0.5">
                                             <span className="text-[11px] font-medium text-gray-gray400">
                                                 Page {i + 1}
                                             </span>
-                                            {multiPage ? (
-                                                <button
-                                                    type="button"
-                                                    aria-label={`Delete page ${i + 1}`}
-                                                    title="Delete page"
-                                                    onClick={() => handleRemovePage(i)}
-                                                    className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
-                                                >
-                                                    <TrashIcon size={15} />
-                                                </button>
+                                            {multiPage && confirmDeletePage === i ? (
+                                                <div className="pointer-events-auto flex items-center gap-1.5 text-[11px]">
+                                                    <span className="text-gray-gray500">
+                                                        Delete this page and its elements?
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setConfirmDeletePage(null)}
+                                                        className="rounded px-1.5 py-0.5 font-medium text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setConfirmDeletePage(null);
+                                                            handleRemovePage(i);
+                                                        }}
+                                                        className="rounded bg-red-red px-1.5 py-0.5 font-medium text-white hover:opacity-90"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            ) : multiPage ? (
+                                                <div className="pointer-events-auto flex items-center gap-0.5">
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Move page ${i + 1} up`}
+                                                        title="Move up"
+                                                        disabled={i === 0}
+                                                        onClick={() => handleMovePage(i, i - 1)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        <ChevronUpIcon size={15} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Move page ${i + 1} down`}
+                                                        title="Move down"
+                                                        disabled={i === config.pages.length - 1}
+                                                        onClick={() => handleMovePage(i, i + 1)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        <ChevronDownIcon size={15} />
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        aria-label={`Delete page ${i + 1}`}
+                                                        title="Delete page"
+                                                        onClick={() => setConfirmDeletePage(i)}
+                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
+                                                    >
+                                                        <TrashIcon size={15} />
+                                                    </button>
+                                                </div>
                                             ) : null}
                                         </div>
                                         <EditorCanvas

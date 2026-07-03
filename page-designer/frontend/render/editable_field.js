@@ -15,14 +15,14 @@ import {
 import {EditIcon} from '../ui/icons.js';
 import {COARSE} from '../ui/pointer.js';
 import {ChoicePill} from './select_pill.js';
-import {SelectStepper} from './select_stepper.js';
+import {SelectStepper, MAX_STEPPER_STEPS} from './select_stepper.js';
+import {RATING_GLYPH, RatingDisplay, CheckboxDisplay, CollaboratorAvatar} from './field_display.js';
 
 const ACCENT = 'rgba(22,110,225';
 const ACCENT_SOLID = '#166ee1';
 const SAVED = '#2ea043';
 const EDIT_TEXT = '#1d1f25'; // readable input text regardless of the element's own color
 const MAX_OPTION_ROWS = 100; // cap rendered picker rows (rosters can be huge)
-const RATING_GLYPH = {star: '★', heart: '♥', thumbsUp: '👍', flag: '⚑'};
 const SAVE_ERROR = "Couldn't save — you may not have edit access, or the change was rejected.";
 
 export function EditableField({
@@ -32,10 +32,10 @@ export function EditableField({
     css,
     selectDisplay = 'text',
     stepperVariant = 'radio',
-    stepperColor,
-    stepperTrackColor,
 }) {
     const isPill = selectDisplay === 'pill';
+    // Flex glyph controls (rating/checkbox) need justify-content to honor Horizontal align.
+    const alignJustify = {left: 'flex-start', center: 'center', right: 'flex-end'}[css.textAlign] || 'flex-start';
     const base = useBase();
     const kind = editableInputKind(field.type);
     // Percent cells are stored as decimals (0.0875) but shown as "8.75%". Edit in
@@ -46,6 +46,7 @@ export function EditableField({
     const restRef = useRef(null); // resting display, for focus restoration
     const savedTimer = useRef(null);
     const wasActive = useRef(false);
+    const initialDraft = useRef(''); // draft at edit-start, so no-op blurs don't write
     const [hover, setHover] = useState(false);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState('');
@@ -97,14 +98,21 @@ export function EditableField({
     // keyboard users keep their place and can Tab onward.
     useEffect(() => {
         const activeNow = editing || !!anchor;
-        if (!activeNow && wasActive.current) restRef.current?.focus?.();
+        // Only reclaim focus if nothing else took it (an async save resolving must
+        // not yank focus out of an editor the user has since opened elsewhere).
+        const focusIsFree = !document.activeElement || document.activeElement === document.body;
+        if (!activeNow && wasActive.current && focusIsFree) restRef.current?.focus?.();
         wasActive.current = activeNow;
     }, [editing, anchor]);
 
     // Clear any pending saved-pulse timer on unmount (cells unmount often in tables).
     useEffect(() => () => clearTimeout(savedTimer.current), []);
 
+    // No inline-edit permission (or unsupported kind): render read-only. Glyph field
+    // types keep their visual (stars / checkbox) instead of falling back to raw text.
     if (!kind || !table.hasPermissionToUpdateRecord(record, {[field.id]: undefined})) {
+        if (kind === 'rating') return <RatingDisplay field={field} record={record} css={css} />;
+        if (kind === 'checkbox') return <CheckboxDisplay field={field} record={record} css={css} />;
         return <div style={css}>{record.getCellValueAsString(field)}</div>;
     }
 
@@ -243,16 +251,37 @@ export function EditableField({
         setEditing(true);
     };
     const optionLabel = (o) => o.name || o.email || '';
+    // Search matches name AND email (Airtable does), so typing an email fragment
+    // finds a collaborator even when they have a display name.
+    const optionSearchText = (o) => [o.name, o.email].filter(Boolean).join(' ').toLowerCase();
+    // Collaborators (they carry an email) show an avatar in the picker.
+    const optionLeading = (o) => (o && o.email ? <CollaboratorAvatar person={o} size="1.4em" /> : null);
+    // Airtable lists collaborators alphabetically.
+    const sortCollaborators = (list) =>
+        [...list].sort((a, b) => (a.name || a.email || '').localeCompare(b.name || b.email || ''));
+    // Avatar + name chip for the resting (selected) collaborator display.
+    const collaboratorChip = (p) => (
+        <span style={{display: 'inline-flex', alignItems: 'center', gap: '0.4em', maxWidth: '100%'}}>
+            <CollaboratorAvatar person={p} />
+            <span style={{overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{p.name || p.email}</span>
+        </span>
+    );
     const clickToOpen = (content) => (
         <div onClick={openPanel} {...focusableRest(openPanel)} aria-haspopup="listbox" aria-expanded={!!anchor} style={restStyle('pointer')}>
             {content ?? (record.getCellValueAsString(field) || ' ')}
             {pencil}
         </div>
     );
-    const popover = (options, {multi, selectedIds, onPick}) => {
+    // base.activeCollaborators only lists individually-materialized collaborators
+    // (direct/workspace/group shares). People who reach the base via a broad grant
+    // like "anyone at <company> can edit" aren't enumerated, so the SDK can't offer
+    // them the way Airtable's server-backed picker does. Say so in the empty state
+    // and point at the fix: direct collaborators are never truncated.
+    const COLLABORATOR_EMPTY_HINT = 'Some people with access may not appear here. Share this app with them directly to assign them.';
+    const popover = (options, {multi, selectedIds, onPick, emptyHint}) => {
         if (!anchor) return null;
         const q = query.trim().toLowerCase();
-        const all = q ? options.filter((o) => optionLabel(o).toLowerCase().includes(q)) : options;
+        const all = q ? options.filter((o) => optionSearchText(o).includes(q)) : options;
         const shown = all.slice(0, MAX_OPTION_ROWS);
         const pickActive = () => {
             if (shown[activeIndex]) onPick(shown[activeIndex].id);
@@ -346,12 +375,18 @@ export function EditableField({
                         ? row({id: '__none__', label: '—', selected: !selectedIds || selectedIds.size === 0, multi, active: false, onClick: () => onPick(null)})
                         : null}
                     {shown.length === 0 ? (
-                        <div style={{padding: '8px', color: '#6b7280'}}>No matches</div>
+                        <div style={{padding: '8px', color: '#6b7280'}}>
+                            No matches
+                            {emptyHint ? (
+                                <div style={{marginTop: 4, fontSize: 12, color: '#9aa0a6'}}>{emptyHint}</div>
+                            ) : null}
+                        </div>
                     ) : (
                         shown.map((o, i) =>
                             row({
                                 id: o.id,
                                 label: optionLabel(o),
+                                leading: optionLeading(o),
                                 selected: selectedIds?.has(o.id),
                                 active: i === activeIndex,
                                 multi,
@@ -371,7 +406,7 @@ export function EditableField({
             document.body,
         );
     };
-    const row = ({id, label: text, selected, active: isActive, multi, onClick, onHover}) => (
+    const row = ({id, label: text, leading, selected, active: isActive, multi, onClick, onHover}) => (
         <div
             key={id}
             role="option"
@@ -389,6 +424,7 @@ export function EditableField({
             }}
         >
             {multi ? <input type="checkbox" readOnly checked={!!selected} style={{accentColor: ACCENT_SOLID}} /> : null}
+            {leading || null}
             <span style={{flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'}}>{text}</span>
             {!multi && selected ? (
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={ACCENT_SOLID} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -403,7 +439,7 @@ export function EditableField({
     if (kind === 'checkbox') {
         const checked = !!record.getCellValue(field);
         return frame(
-            <div style={{...css, display: 'flex', alignItems: 'center'}}>
+            <div style={{...css, display: 'flex', alignItems: 'center', justifyContent: alignJustify}}>
                 <input
                     type="checkbox"
                     aria-label={label}
@@ -423,7 +459,7 @@ export function EditableField({
         const value = Number(record.getCellValue(field)) || 0;
         const setRating = (n) => commit(n === value ? null : n);
         return frame(
-            <div role="group" aria-label={label} style={{...css, display: 'flex', gap: '0.1em'}}>
+            <div role="group" aria-label={label} style={{...css, display: 'flex', gap: '0.1em', justifyContent: alignJustify}}>
                 {Array.from({length: max}, (_, i) => i + 1).map((n) => (
                     <span
                         key={n}
@@ -451,15 +487,15 @@ export function EditableField({
 
     if (kind === 'select') {
         // Stepper is its own control (click a step to set the value) — no popover.
-        if (selectDisplay === 'stepper') {
+        // With too many choices it degrades to overlap; use the popover editor then.
+        const stepperChoices = (field.config && field.config.options && field.config.options.choices) || [];
+        if (selectDisplay === 'stepper' && stepperChoices.length <= MAX_STEPPER_STEPS) {
             return frame(
                 <SelectStepper
                     field={field}
                     record={record}
                     css={css}
                     variant={stepperVariant}
-                    accent={stepperColor}
-                    track={stepperTrackColor}
                     saving={saving}
                     onChange={(id) => commit(id ? {id} : null)}
                 />,
@@ -488,15 +524,20 @@ export function EditableField({
     // --- Single collaborator: searchable popover (rosters can be huge) -----------
 
     if (kind === 'collaborator') {
-        const people = base.activeCollaborators || [];
+        const people = sortCollaborators(base.activeCollaborators || []);
+        const byId = new Map(people.map((p) => [p.id, p]));
         const current = record.getCellValue(field);
-        const options = current && !people.some((p) => p.id === current.id) ? [current, ...people] : people;
+        const options = current && !byId.has(current.id) ? [current, ...people] : people;
+        // Enrich the cell value from activeCollaborators so the resting chip has a
+        // profile pic even if the stored value doesn't carry one.
+        const resting = current ? collaboratorChip(byId.get(current.id) || current) : undefined;
         return frame(
             <>
-                {clickToOpen()}
+                {clickToOpen(resting)}
                 {popover(options, {
                     multi: false,
                     selectedIds: current ? new Set([current.id]) : new Set(),
+                    emptyHint: COLLABORATOR_EMPTY_HINT,
                     onPick: (id) => {
                         commit(id ? {id} : null);
                         setAnchor(null);
@@ -511,7 +552,9 @@ export function EditableField({
     if (kind === 'date' || kind === 'datetime') {
         if (!editing) {
             const start = () => {
-                setDraft(isoToInputValue(kind, record.getCellValue(field)));
+                const v = isoToInputValue(kind, record.getCellValue(field));
+                initialDraft.current = v;
+                setDraft(v);
                 setError(false);
                 setEditing(true);
             };
@@ -530,10 +573,18 @@ export function EditableField({
                 value={draft}
                 disabled={saving}
                 onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => commit(inputValueToIso(kind, draft))}
+                onBlur={() => {
+                    // Unchanged drafts must not write: datetime-local is minute-granular,
+                    // so a no-op commit would silently truncate stored seconds.
+                    if (draft === initialDraft.current) setEditing(false);
+                    else commit(inputValueToIso(kind, draft));
+                }}
                 onKeyDown={(e) => {
                     if (e.key === 'Escape') setEditing(false);
-                    else if (e.key === 'Enter') commit(inputValueToIso(kind, draft));
+                    else if (e.key === 'Enter') {
+                        if (draft === initialDraft.current) setEditing(false);
+                        else commit(inputValueToIso(kind, draft));
+                    }
                 }}
                 style={{...css, color: EDIT_TEXT, width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', padding: 0}}
             />,
@@ -543,10 +594,11 @@ export function EditableField({
     // --- Multi-value: searchable checklist popover ------------------------------
 
     if (kind === 'multiselect' || kind === 'multicollaborator') {
-        const baseOptions =
-            kind === 'multiselect'
-                ? (field.config && field.config.options && field.config.options.choices) || []
-                : base.activeCollaborators || [];
+        const isMultiCollab = kind === 'multicollaborator';
+        const baseOptions = isMultiCollab
+            ? sortCollaborators(base.activeCollaborators || [])
+            : (field.config && field.config.options && field.config.options.choices) || [];
+        const byId = new Map(baseOptions.map((o) => [o.id, o]));
         const current = record.getCellValue(field) || [];
         const optionIds = new Set(baseOptions.map((o) => o.id));
         const options = [...baseOptions, ...current.filter((c) => !optionIds.has(c.id))];
@@ -556,7 +608,7 @@ export function EditableField({
             const next = cur.some((x) => x.id === id) ? cur.filter((x) => x.id !== id) : [...cur, {id}];
             commit(next.map((x) => ({id: x.id})), true);
         };
-        // Pill display applies to multi-SELECT choices (colored), not collaborators.
+        // Multi-select choices show as colored pills; multi-collaborators as avatar chips.
         const resting =
             kind === 'multiselect' && isPill && current.length ? (
                 <span style={{display: 'inline-flex', flexWrap: 'wrap', gap: '0.3em', maxWidth: '100%'}}>
@@ -564,11 +616,22 @@ export function EditableField({
                         <ChoicePill key={i} field={field} choice={c} css={css} />
                     ))}
                 </span>
+            ) : isMultiCollab && current.length ? (
+                <span style={{display: 'inline-flex', flexWrap: 'wrap', alignItems: 'center', gap: '0.4em', maxWidth: '100%'}}>
+                    {current.map((c, i) => (
+                        <span key={c.id || i}>{collaboratorChip(byId.get(c.id) || c)}</span>
+                    ))}
+                </span>
             ) : undefined;
         return frame(
             <>
                 {clickToOpen(resting)}
-                {popover(options, {multi: true, selectedIds: currentIds, onPick: toggle})}
+                {popover(options, {
+                    multi: true,
+                    selectedIds: currentIds,
+                    emptyHint: isMultiCollab ? COLLABORATOR_EMPTY_HINT : undefined,
+                    onPick: toggle,
+                })}
             </>,
         );
     }
@@ -578,7 +641,9 @@ export function EditableField({
     if (!editing) {
         const start = () => {
             const v = record.getCellValue(field);
-            setDraft(v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v));
+            const d = v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v);
+            initialDraft.current = d;
+            setDraft(d);
             setError(false);
             setEditing(true);
         };
@@ -590,7 +655,17 @@ export function EditableField({
         );
     }
 
-    const commitText = () => {
+    const commitText = (e) => {
+        if (draft === initialDraft.current) {
+            setEditing(false);
+            return;
+        }
+        // Chrome sanitizes invalid <input type=number> text to '' (validity.badInput);
+        // committing that would turn a typo into a silent cell clear.
+        if (kind === 'number' && e && e.target && e.target.validity && e.target.validity.badInput) {
+            setEditing(false);
+            return;
+        }
         if (kind === 'number' && draft.trim() !== '' && !Number.isFinite(Number(draft))) {
             setEditing(false);
             return;
@@ -604,7 +679,7 @@ export function EditableField({
             setEditing(false);
         } else if (e.key === 'Enter' && kind !== 'textarea') {
             e.preventDefault();
-            commitText();
+            commitText(e);
         }
     };
     const inputStyle = {

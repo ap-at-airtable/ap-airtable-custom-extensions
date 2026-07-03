@@ -13,6 +13,14 @@ export function getJsBarcode() {
     return window.JsBarcode;
 }
 
+let qrUtf8Set = false;
 export function getQRCode() {
+    // The vendored library's default stringToBytes truncates each code unit to one
+    // byte (Latin-1), so non-ASCII record text scans as mojibake. QR readers assume
+    // UTF-8 for byte mode; encode accordingly.
+    if (!qrUtf8Set) {
+        qrcode.stringToBytes = (str) => Array.from(new TextEncoder().encode(str));
+        qrUtf8Set = true;
+    }
     return qrcode;
 }

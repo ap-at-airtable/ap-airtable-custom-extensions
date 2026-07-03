@@ -73,5 +73,19 @@ export function usePrintMode(page) {
         window.setTimeout(go, 5000);
     }, []);
 
+    // Cmd/Ctrl+P with focus inside the extension: route through printNow so the
+    // print waits for images like the button does. (With focus on the host page,
+    // the browser prints the host and the iframe can't intercept that.)
+    useEffect(() => {
+        const onKeyDown = (e) => {
+            if ((e.metaKey || e.ctrlKey) && (e.key === 'p' || e.key === 'P')) {
+                e.preventDefault();
+                printNow();
+            }
+        };
+        window.addEventListener('keydown', onKeyDown);
+        return () => window.removeEventListener('keydown', onKeyDown);
+    }, [printNow]);
+
     return {printing, printNow};
 }

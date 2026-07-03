@@ -1,25 +1,32 @@
 // Tracks an element's content-box width via ResizeObserver. Returns [ref, width].
 
-import {useCallback, useEffect, useRef, useState} from 'react';
+import {useCallback, useRef, useState} from 'react';
 
 export function useContainerWidth() {
-    const ref = useRef(null);
     const [width, setWidth] = useState(0);
+    const observerRef = useRef(null);
 
-    useEffect(() => {
-        const node = ref.current;
-        if (!node) {
-            return undefined;
+    // Callback ref (not a mount-only effect) so the observer re-attaches when the
+    // node appears later - e.g. after an empty state swaps to the real container -
+    // otherwise fit-to-width is stuck at the fallback for the whole session. Also
+    // carries .current for imperative consumers (the pinch-zoom handlers).
+    const ref = useCallback((node) => {
+        ref.current = node;
+        if (observerRef.current) {
+            observerRef.current.disconnect();
+            observerRef.current = null;
         }
-        const observer = new ResizeObserver((entries) => {
-            const entry = entries[0];
-            if (entry) {
-                setWidth(entry.contentRect.width);
-            }
-        });
-        observer.observe(node);
-        setWidth(node.clientWidth);
-        return () => observer.disconnect();
+        if (node) {
+            const observer = new ResizeObserver((entries) => {
+                const entry = entries[0];
+                if (entry) {
+                    setWidth(entry.contentRect.width);
+                }
+            });
+            observer.observe(node);
+            setWidth(node.clientWidth);
+            observerRef.current = observer;
+        }
     }, []);
 
     return [ref, width];

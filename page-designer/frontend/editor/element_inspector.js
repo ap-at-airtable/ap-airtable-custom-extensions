@@ -16,7 +16,6 @@ import {
     BarcodeFormat,
     LinkedRecordDisplay,
 } from '../domain/element_types.mjs';
-import {ConditionOp, CONDITION_OP_LABELS, VALUELESS_OPS} from '../domain/dynamic_content.mjs';
 import {isEditableFieldType, editableInputKind} from '../domain/editable_fields.mjs';
 import {AlignMode, DistributeAxis} from '../domain/alignment.mjs';
 import {
@@ -123,35 +122,6 @@ const IMAGE_FIT_OPTIONS = [
 const BARCODE_FORMAT_OPTIONS = Object.values(BarcodeFormat).map((v) => ({value: v, label: v}));
 
 
-const OP_OPTIONS = Object.entries(CONDITION_OP_LABELS).map(([value, label]) => ({value, label}));
-
-// Compact field/operator/value editor for a conditional rule.
-function ConditionEditor({condition, table, onChange}) {
-    const fieldOptions = table.fields.map((f) => ({value: f.id, label: f.name}));
-    const needsValue = !VALUELESS_OPS.has(condition.op);
-    return (
-        <div className="space-y-2 rounded-md border border-gray-gray200 bg-gray-gray50 p-2 dark:border-gray-gray700 dark:bg-gray-gray900">
-            <Select
-                value={condition.fieldId}
-                placeholder="Select a field"
-                options={fieldOptions}
-                onChange={(fieldId) => onChange({...condition, fieldId})}
-            />
-            <Select
-                value={condition.op}
-                options={OP_OPTIONS}
-                onChange={(op) => onChange({...condition, op})}
-            />
-            {needsValue ? (
-                <TextInput
-                    value={condition.value}
-                    onChange={(value) => onChange({...condition, value})}
-                    placeholder="Value"
-                />
-            ) : null}
-        </div>
-    );
-}
 
 export function ElementInspector({
     element,
@@ -165,12 +135,6 @@ export function ElementInspector({
     const {kind, style} = element;
     const setStyle = (patch) => onChange({style: patch});
     const base = useBase();
-
-    const rules = element.rules || {};
-    const setRule = (key, value) => {
-        const next = {...rules, [key]: value};
-        onChange({rules: next.visibility || next.color ? next : null});
-    };
 
     // Field binding is irrelevant for a static-URL image (it has its own URL input).
     const showField =
@@ -274,31 +238,17 @@ export function ElementInspector({
                         </Field>
                     ) : null}
                     {isSingleSelectField && style.selectDisplay === 'stepper' ? (
-                        <>
-                            <Field label="Stepper style">
-                                <Segmented
-                                    label="Stepper style"
-                                    value={style.stepperVariant || 'radio'}
-                                    options={[
-                                        {value: 'radio', label: 'Radio'},
-                                        {value: 'number', label: 'Number'},
-                                    ]}
-                                    onChange={(v) => setStyle({stepperVariant: v})}
-                                />
-                            </Field>
-                            <Field label="Active color">
-                                <ColorInput
-                                    value={style.stepperColor || '#2d7ff9'}
-                                    onChange={(c) => setStyle({stepperColor: c})}
-                                />
-                            </Field>
-                            <Field label="Track color">
-                                <ColorInput
-                                    value={style.stepperTrackColor || '#cfd0d3'}
-                                    onChange={(c) => setStyle({stepperTrackColor: c})}
-                                />
-                            </Field>
-                        </>
+                        <Field label="Stepper style" hint="The selected step uses its choice's color.">
+                            <Segmented
+                                label="Stepper style"
+                                value={style.stepperVariant || 'radio'}
+                                options={[
+                                    {value: 'radio', label: 'Radio'},
+                                    {value: 'number', label: 'Number'},
+                                ]}
+                                onChange={(v) => setStyle({stepperVariant: v})}
+                            />
+                        </Field>
                     ) : null}
                     {isLinkedField ? (
                         <Field label="Linked records">
@@ -595,60 +545,6 @@ export function ElementInspector({
                         onChange={(rotation) => onChange({rotation})}
                     />
                 </Field>
-            </Section>
-
-            <Section title="Rules">
-                <Field label="Show this element">
-                    <Select
-                        value={rules.visibility ? 'conditional' : 'always'}
-                        options={[
-                            {value: 'always', label: 'Always'},
-                            {value: 'conditional', label: 'Only when…'},
-                        ]}
-                        onChange={(v) =>
-                            setRule(
-                                'visibility',
-                                v === 'conditional'
-                                    ? {fieldId: '', op: ConditionOp.NOT_EMPTY, value: ''}
-                                    : null,
-                            )
-                        }
-                    />
-                </Field>
-                {rules.visibility ? (
-                    <ConditionEditor
-                        condition={rules.visibility}
-                        table={table}
-                        onChange={(c) => setRule('visibility', c)}
-                    />
-                ) : null}
-                <Toggle
-                    label="Conditional color"
-                    checked={!!rules.color}
-                    onChange={(on) =>
-                        setRule(
-                            'color',
-                            on
-                                ? {fieldId: '', op: ConditionOp.NOT_EMPTY, value: '', color: '#dc043b'}
-                                : null,
-                        )
-                    }
-                />
-                {rules.color ? (
-                    <>
-                        <ConditionEditor
-                            condition={rules.color}
-                            table={table}
-                            onChange={(c) => setRule('color', {...c, color: rules.color.color})}
-                        />
-                        <Field label="Color">
-                            <ColorInput
-                                value={rules.color.color}
-                                onChange={(color) => setRule('color', {...rules.color, color})}
-                            />
-                        </Field>
-                    </>
-                ) : null}
             </Section>
         </div>
     );

@@ -5,10 +5,18 @@
 import {PageCanvas, ScaledPage} from '../render/page_canvas.js';
 import {PRINT_SCALE} from './print.js';
 
+// Hard sheet cap enforced HERE so no caller can mount an unbounded print DOM
+// (printNow flushSync-mounts this synchronously; thousands of sheets hang the
+// iframe). View mode also uses this to size its "printing first N" banner.
+export const MAX_PRINT_SHEETS = 500;
+
 export function PrintLayer({page, pages, records, table}) {
+    const pageCount = Math.max(1, pages.length);
+    const maxRecords = Math.max(1, Math.floor(MAX_PRINT_SHEETS / pageCount));
+    const printable = records.length > maxRecords ? records.slice(0, maxRecords) : records;
     return (
         <div className="pd-print-only">
-            {records.map((record) =>
+            {printable.map((record) =>
                 pages.map((entry, i) => (
                     <div key={`${record.id}:${i}`} className="pd-print-page">
                         <ScaledPage page={page} scale={PRINT_SCALE}>

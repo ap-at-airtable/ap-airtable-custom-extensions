@@ -1,17 +1,21 @@
 // Single-select rendered as an ordered stepper (Airtable's SELECT_STEPPER
-// interface element): the field's choices laid out in sequence with connector
-// lines, the current value highlighted and everything before it "completed".
-// Two variants: 'radio' (dot) and 'number' (numbered circle). Interactive when
-// onChange is given (click a step to set the value), else read-only. The accent
-// (done/active) and track (pending) colors are builder-settable.
+// interface element): the field's choices laid out with connector lines. The
+// selected step is drawn in that choice's own color (matching its label token);
+// everything else is a neutral gray. Two variants: 'radio' (dot) and 'number'
+// (numbered circle). Interactive when onChange is given (click to set the value).
 
-import {ChoicePill} from './select_pill.js';
+import {colorUtils} from '@airtable/blocks/interface/ui';
+import {ChoicePill, choiceColorName} from './select_pill.js';
 
-export const STEPPER_ACCENT = '#2d7ff9';
-export const STEPPER_TRACK = '#cfd0d3';
-const QUIET = '#8a8f98';
+// Beyond this many choices the circles overlap into an unreadable strip; callers
+// fall back to pill/popover rendering instead.
+export const MAX_STEPPER_STEPS = 12;
 
-// Dark vs light text for a numbered circle filled with the accent color.
+const RAIL = '#dfe1e5'; // connectors + inactive outlines
+const SOFT = '#f2f4f8'; // inactive circle fill (a hint of gray, not stark white)
+const TEXT = '#8a8f98'; // non-selected labels + numbers
+
+// Dark vs light text for a circle filled with the selected choice color.
 function readableOn(hex) {
     if (typeof hex !== 'string' || !hex.startsWith('#') || hex.length < 7) return '#ffffff';
     const n = parseInt(hex.slice(1, 7), 16);
@@ -21,10 +25,8 @@ function readableOn(hex) {
     return (0.299 * r + 0.587 * g + 0.114 * b) / 255 > 0.6 ? '#1d1f25' : '#ffffff';
 }
 
-// The current step uses the accent color; every other step uses the track color,
-// so both colors are visible at any value (including the last step).
-function Circle({variant, index, active, accent, track}) {
-    const border = `2px solid ${active ? accent : track}`;
+function Circle({variant, index, active, color}) {
+    const border = `2px solid ${active ? color : RAIL}`;
     if (variant === 'number') {
         return (
             <span
@@ -34,8 +36,8 @@ function Circle({variant, index, active, accent, track}) {
                     height: '1.7em',
                     borderRadius: '50%',
                     border,
-                    backgroundColor: active ? accent : '#ffffff',
-                    color: active ? readableOn(accent) : track,
+                    backgroundColor: active ? color : SOFT,
+                    color: active ? readableOn(color) : TEXT,
                     fontSize: '0.8em',
                     fontWeight: active ? 600 : 500,
                     display: 'flex',
@@ -56,34 +58,29 @@ function Circle({variant, index, active, accent, track}) {
                 height: '1.5em',
                 borderRadius: '50%',
                 border,
-                backgroundColor: '#ffffff',
+                backgroundColor: SOFT,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
             }}
         >
             {active ? (
-                <span style={{width: '0.72em', height: '0.72em', borderRadius: '50%', backgroundColor: accent}} />
+                <span style={{width: '0.72em', height: '0.72em', borderRadius: '50%', backgroundColor: color}} />
             ) : null}
         </span>
     );
 }
 
-export function SelectStepper({
-    field,
-    record,
-    css,
-    variant = 'radio',
-    accent = STEPPER_ACCENT,
-    track = STEPPER_TRACK,
-    onChange,
-    saving,
-}) {
+export function SelectStepper({field, record, css, variant = 'radio', onChange, saving}) {
     const choices = (field.config && field.config.options && field.config.options.choices) || [];
     const current = record ? record.getCellValue(field) : null;
     const currentIndex = current ? choices.findIndex((c) => c.id === current.id) : -1;
     const interactive = typeof onChange === 'function';
     const last = choices.length - 1;
+
+    // The selected step's color is the selected choice's own color (matches its pill).
+    const selectedName = current ? choiceColorName(field, current) : null;
+    const activeColor = (selectedName && colorUtils.getHexForColor(selectedName)) || '#2d7ff9';
 
     return (
         <div
@@ -100,23 +97,9 @@ export function SelectStepper({
                 const step = (
                     <>
                         <div style={{display: 'flex', alignItems: 'center', width: '100%'}}>
-                            {/* The rail is always the track color; progress shows via the
-                                circles (accent). So the track color is visible at any value. */}
-                            <span
-                                style={{
-                                    flex: 1,
-                                    height: 2,
-                                    backgroundColor: i === 0 ? 'transparent' : track,
-                                }}
-                            />
-                            <Circle variant={variant} index={i} active={active} accent={accent} track={track} />
-                            <span
-                                style={{
-                                    flex: 1,
-                                    height: 2,
-                                    backgroundColor: i === last ? 'transparent' : track,
-                                }}
-                            />
+                            <span style={{flex: 1, height: 2, backgroundColor: i === 0 ? 'transparent' : RAIL}} />
+                            <Circle variant={variant} index={i} active={active} color={activeColor} />
+                            <span style={{flex: 1, height: 2, backgroundColor: i === last ? 'transparent' : RAIL}} />
                         </div>
                         <div style={{marginTop: '0.35em', maxWidth: '100%', textAlign: 'center'}}>
                             {active ? (
@@ -124,7 +107,7 @@ export function SelectStepper({
                             ) : (
                                 <span
                                     style={{
-                                        color: QUIET,
+                                        color: TEXT,
                                         overflow: 'hidden',
                                         textOverflow: 'ellipsis',
                                         whiteSpace: 'nowrap',

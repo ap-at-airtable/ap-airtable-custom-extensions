@@ -3,7 +3,7 @@
 // per page of the document ({backgroundColor, layout}). Writes are optimistic;
 // transient drag state lives in the editor and commits here on pointer-up.
 
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useGlobalConfig} from '@airtable/blocks/interface/ui';
 import {ConfigKey, defaultPage, defaultPageEntry, SCHEMA_VERSION} from '../domain/config_keys.mjs';
 import {hydratePages} from '../domain/layout_model.mjs';
@@ -49,46 +49,85 @@ export function useConfigDocument() {
     const docRef = useRef({page, pages});
     docRef.current = {page, pages};
 
-    const pushUndo = useCallback(() => {
+    // Multiplayer guard: undo snapshots are only valid against our own writes.
+    // Writers bump writeSeq; an echo of our own write reaches this effect with the
+    // sequence advanced. A doc change with NO local write since the last look means
+    // another builder (or tab) edited it - restoring a snapshot would silently
+    // revert their work, so drop the history instead.
+    const writeSeq = useRef(0);
+    const seenSeq = useRef(0);
+    useEffect(() => {
+        if (writeSeq.current !== seenSeq.current) {
+            seenSeq.current = writeSeq.current;
+            return;
+        }
+        if (past.current.length || future.current.length) {
+            past.current = [];
+            future.current = [];
+            bumpHistory((n) => n + 1);
+        }
+    }, [page, pages]);
+
+    // One undo step per user action. A coalesceKey marks writes that stream from a
+    // single continuous input (per-keystroke inspector edits): rapid same-key writes
+    // share the first snapshot. Keyless writes (drags, adds, page ops) always get
+    // their own step. New edits invalidate redo either way.
+    const lastPushAt = useRef(0);
+    const lastPushKey = useRef(null);
+    const pushUndo = useCallback((coalesceKey) => {
+        const now = Date.now();
+        future.current = [];
+        if (
+            coalesceKey != null &&
+            coalesceKey === lastPushKey.current &&
+            now - lastPushAt.current < 1200 &&
+            past.current.length > 0
+        ) {
+            bumpHistory((n) => n + 1);
+            return;
+        }
+        lastPushAt.current = now;
+        lastPushKey.current = coalesceKey ?? null;
         past.current.push(docRef.current);
         if (past.current.length > MAX_HISTORY) {
             past.current.shift();
         }
-        future.current = [];
         bumpHistory((n) => n + 1);
     }, []);
 
     // Writes the pages array (and clears the legacy v1 layout key on first migration).
+    // Owns the undo snapshot so it can never be pushed for a write the size guard
+    // rejects (a polluted stack would light up Undo for a change that never saved).
     const writePages = useCallback(
-        (nextPages) => {
+        (nextPages, coalesceKey) => {
             if (estimateDocBytes(docRef.current.page, nextPages) > MAX_DOC_BYTES) {
                 return Promise.reject(new Error('DOC_TOO_LARGE'));
             }
+            pushUndo(coalesceKey);
+            writeSeq.current += 1;
             return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGES], value: nextPages},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
                 {path: [ConfigKey.LAYOUT], value: undefined},
             ]);
         },
-        [globalConfig],
+        [globalConfig, pushUndo],
     );
 
     const setLayout = useCallback(
-        (index, nextLayout) => {
+        (index, nextLayout, coalesceKey) => {
             const next = docRef.current.pages.map((p, i) => (i === index ? {...p, layout: nextLayout} : p));
-            pushUndo();
-            return writePages(next);
+            return writePages(next, coalesceKey);
         },
-        [pushUndo, writePages],
+        [writePages],
     );
 
     const setBackground = useCallback(
         (index, backgroundColor) => {
             const next = docRef.current.pages.map((p, i) => (i === index ? {...p, backgroundColor} : p));
-            pushUndo();
-            return writePages(next);
+            return writePages(next, `bg:${index}`);
         },
-        [pushUndo, writePages],
+        [writePages],
     );
 
     const setPageGeometry = useCallback(
@@ -96,7 +135,8 @@ export function useConfigDocument() {
             if (estimateDocBytes(nextPage, docRef.current.pages) > MAX_DOC_BYTES) {
                 return Promise.reject(new Error('DOC_TOO_LARGE'));
             }
-            pushUndo();
+            pushUndo('geometry');
+            writeSeq.current += 1;
             return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGE], value: nextPage},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
@@ -109,29 +149,43 @@ export function useConfigDocument() {
         if (docRef.current.pages.length >= MAX_PAGES) {
             return Promise.resolve();
         }
-        pushUndo();
         return writePages([...docRef.current.pages, defaultPageEntry()]);
-    }, [pushUndo, writePages]);
+    }, [writePages]);
 
     const removePage = useCallback(
         (index) => {
             if (docRef.current.pages.length <= 1) {
                 return Promise.resolve();
             }
-            pushUndo();
             return writePages(docRef.current.pages.filter((_, i) => i !== index));
         },
-        [pushUndo, writePages],
+        [writePages],
+    );
+
+    const movePage = useCallback(
+        (from, to) => {
+            const pages = docRef.current.pages;
+            if (to < 0 || to >= pages.length || from === to) {
+                return Promise.resolve();
+            }
+            const next = pages.slice();
+            const [moved] = next.splice(from, 1);
+            next.splice(to, 0, moved);
+            return writePages(next);
+        },
+        [writePages],
     );
 
     const restore = useCallback(
-        (snap) =>
-            globalConfig.setPathsAsync([
+        (snap) => {
+            writeSeq.current += 1;
+            return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGE], value: snap.page},
                 {path: [ConfigKey.PAGES], value: snap.pages},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
                 {path: [ConfigKey.LAYOUT], value: undefined},
-            ]),
+            ]);
+        },
         [globalConfig],
     );
 
@@ -165,6 +219,7 @@ export function useConfigDocument() {
         setPageGeometry,
         addPage,
         removePage,
+        movePage,
         undo,
         redo,
         canUndo: past.current.length > 0,

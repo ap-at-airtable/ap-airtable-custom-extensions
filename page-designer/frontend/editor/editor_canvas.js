@@ -5,6 +5,7 @@
 // to the latest local layout. Resize/rotate are single-selection only.
 
 import {useRef, useState} from 'react';
+import {useBase} from '@airtable/blocks/interface/ui';
 import {resolvePageSizePx, PAGE_GRID_SIZE, snapToGrid} from '../domain/page_geometry.mjs';
 import {getOrderedElements, clampElementToPage, clampGroupDelta, columnFractions} from '../domain/layout_model.mjs';
 import {LinkedRecordDisplay} from '../domain/element_types.mjs';
@@ -22,7 +23,7 @@ const HANDLES = [
     {key: 'w', dirX: -1, dirY: 0, cursor: 'ew-resize', left: 0, top: '50%'},
 ];
 
-function beginGesture(e, {onMove, onEnd}) {
+function beginGesture(e, {onMove, onEnd, onCancel}) {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -40,7 +41,7 @@ function beginGesture(e, {onMove, onEnd}) {
     const cleanup = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
-        window.removeEventListener('pointercancel', cleanup);
+        window.removeEventListener('pointercancel', cancel);
         try {
             target.releasePointerCapture?.(pointerId);
         } catch {
@@ -51,9 +52,16 @@ function beginGesture(e, {onMove, onEnd}) {
         cleanup();
         if (onEnd) onEnd({dx: ev.clientX - startX, dy: ev.clientY - startY, event: ev});
     };
+    // pointercancel (e.g. the browser reclaims a touch for scrolling) must reset the
+    // caller's transient state, not just drop listeners — else marquee/drag previews
+    // strand on screen. It must NOT commit like `up` does.
+    const cancel = () => {
+        cleanup();
+        if (onCancel) onCancel();
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('pointercancel', cancel);
 }
 
 export function EditorCanvas({
@@ -71,6 +79,7 @@ export function EditorCanvas({
     onDropFields,
 }) {
     const overlayRef = useRef(null);
+    const base = useBase();
     const [marquee, setMarquee] = useState(null);
     const {width: pageW, height: pageH} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -96,6 +105,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx, dy}) => onPreview(patchesFor(dx, dy)),
             onEnd: ({dx, dy}) => onCommit(patchesFor(dx, dy)),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -129,6 +139,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx, dy}) => onPreview({[id]: computeResized(start, dir, dx, dy)}),
             onEnd: ({dx, dy}) => onCommit({[id]: computeResized(start, dir, dx, dy)}),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -146,13 +157,24 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({event}) => onPreview({[id]: {rotation: angleFor(event)}}),
             onEnd: ({event}) => onCommit({[id]: {rotation: angleFor(event)}}),
+            onCancel: () => onPreview({}),
         });
+    };
+
+    // Column ids that actually render: LinkedRecordTable drops ids whose field was
+    // deleted, so the divider overlay must too or handles desync from columns.
+    const resolvedLinkedColumns = (el) => {
+        const f = el.fieldId ? table.getFieldByIdIfExists(el.fieldId) : null;
+        const linkedTableId = f && f.config && f.config.options ? f.config.options.linkedTableId : null;
+        const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
+        const cols = el.linkedColumns || [];
+        return linkedTable ? cols.filter((id) => linkedTable.getFieldByIdIfExists(id)) : cols;
     };
 
     // Resize the boundary between columns k and k+1 of a linked-record table,
     // shifting width between just those two (fractions always sum to 1).
     const startColumnResize = (e, el, k) => {
-        const cols = el.linkedColumns || [];
+        const cols = resolvedLinkedColumns(el);
         const pad = el.style.padding || 0;
         const tableWidth = Math.max(1, el.width - 2 * pad);
         const start = columnFractions(cols, el.linkedColumnWidths);
@@ -172,6 +194,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx}) => onPreview(compute(dx)),
             onEnd: ({dx}) => onCommit(compute(dx)),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -180,7 +203,7 @@ export function EditorCanvas({
         if (el.style.linkedRecordDisplay !== LinkedRecordDisplay.TABLE || el.rotation) {
             return null;
         }
-        const cols = el.linkedColumns || [];
+        const cols = resolvedLinkedColumns(el);
         if (cols.length < 2) {
             return null;
         }
@@ -204,6 +227,7 @@ export function EditorCanvas({
                         transform: 'translateX(-50%)',
                         cursor: 'col-resize',
                         zIndex: 5,
+                        touchAction: 'none',
                     }}
                 >
                     <div
@@ -232,6 +256,7 @@ export function EditorCanvas({
         const origin = toPage(e);
         const additive = e.shiftKey || e.metaKey || e.ctrlKey;
         beginGesture(e, {
+            onCancel: () => setMarquee(null),
             onMove: ({event}) => {
                 const cur = toPage(event);
                 setMarquee({x0: origin.x, y0: origin.y, x1: cur.x, y1: cur.y});
@@ -294,15 +319,26 @@ export function EditorCanvas({
             </div>
 
             {showGrid ? (
-                <div
-                    className="pointer-events-none absolute inset-0"
-                    style={{
-                        backgroundImage:
-                            'linear-gradient(to right, rgba(22,110,225,0.14) 1px, transparent 1px),' +
-                            'linear-gradient(to bottom, rgba(22,110,225,0.14) 1px, transparent 1px)',
-                        backgroundSize: `${PAGE_GRID_SIZE * scale}px ${PAGE_GRID_SIZE * scale}px`,
-                    }}
-                />
+                <div className="pointer-events-none absolute inset-0">
+                    <div
+                        className="absolute inset-0"
+                        style={{
+                            backgroundImage:
+                                'linear-gradient(to right, rgba(22,110,225,0.14) 1px, transparent 1px),' +
+                                'linear-gradient(to bottom, rgba(22,110,225,0.14) 1px, transparent 1px)',
+                            backgroundSize: `${PAGE_GRID_SIZE * scale}px ${PAGE_GRID_SIZE * scale}px`,
+                        }}
+                    />
+                    {/* Stronger center guides (vertical + horizontal) for centering elements. */}
+                    <div
+                        className="absolute top-0 bottom-0"
+                        style={{left: '50%', width: 1, backgroundColor: 'rgba(22,110,225,0.4)'}}
+                    />
+                    <div
+                        className="absolute left-0 right-0"
+                        style={{top: '50%', height: 1, backgroundColor: 'rgba(22,110,225,0.4)'}}
+                    />
+                </div>
             ) : null}
 
             {elements.length === 0 ? (
@@ -346,6 +382,7 @@ export function EditorCanvas({
                                     : undefined,
                                 transformOrigin: 'center center',
                                 cursor: 'move',
+                                touchAction: 'none',
                                 outline: selected
                                     ? '1.5px solid rgb(22,110,225)'
                                     : '1px solid rgba(22,110,225,0.12)',
@@ -370,6 +407,7 @@ export function EditorCanvas({
                                             border: '1.5px solid rgb(22,110,225)',
                                             boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
                                             cursor: 'grab',
+                                            touchAction: 'none',
                                         }}
                                     />
                                     {element.rotation === 0
@@ -391,6 +429,7 @@ export function EditorCanvas({
                                                       border: '1.5px solid rgb(22,110,225)',
                                                       boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
                                                       cursor: h.cursor,
+                                                      touchAction: 'none',
                                                   }}
                                               />
                                           ))

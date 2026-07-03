@@ -7,8 +7,7 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 ## Features
 
 - Drag, resize, and rotate fields, text, images, lines, barcodes, and QR codes on a real page canvas
-- Merge record values into text with `{Field name}`, plus number/currency/percent formatting and prefixes and suffixes
-- Conditional visibility and conditional color, so a page reacts to the record (turn an "Overdue" status red, hide an empty field)
+- Merge record values into text with `{Field name}`; field values render with the field's own formatting (currency, percent, decimals)
 - Linked records as a comma list, a bulleted list, or a table with the columns you pick
 - Letter, A4, legal, and slide sizes, page background color, zoom, and a single-page or continuous view
 - Multi-select with align and distribute, a snap grid, and undo/redo (Cmd/Ctrl+Z)
@@ -16,33 +15,46 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 - Print that comes out one clean sheet per record, sized to match what you designed
 - Barcode and QR libraries are bundled, so rendering works with no runtime CDN dependency
 
-## Setup
+## Get it on your base
 
-1. In your Interface, edit a page and add a **Custom element**.
-2. Pick the **table** you want as the record source.
-3. Search for this extension and add it.
-4. Hit **Finish**, then design your layout in edit mode. The published page renders for viewers.
+This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. You publish it to your own base with Airtable's Blocks CLI, using this repo as the source code:
+
+1. **Create a custom extension.** In your Interface, edit a page, add a **Custom element**, and choose to build a new custom extension. Airtable shows you a scaffold command for your new extension, like:
+
+    ```bash
+    block init NONE/blkYourBlockId --template=https://github.com/Airtable/interface-extensions-hello-world my_extension
+    ```
+
+    Run it (it needs the [Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started): `npm install -g @airtable/blocks-cli`). You now have a working scaffold wired to *your* extension, with dependencies installed.
+
+2. **Drop in this code.** Replace the scaffold's `frontend/` folder with the `frontend/` folder from this repo, and make sure its `block.json` points at `frontend/index.js` (this repo's `block.json` already does — you can copy that too).
+
+3. **Release it:**
+
+    ```bash
+    block run      # optional: live-develop it on your page first
+    block release  # publish it to your base
+    ```
+
+4. **Design.** Back in your Interface: point the Custom element at your extension, pick the **table** whose records become pages, hit **Finish**, and lay out your page in edit mode. The published page renders for viewers.
 
 ### Custom properties
 
 - **Title.** An optional heading shown above the view.
 - **Table.** The table whose records each become a page.
 
-## Local development
+## Working on this repo
 
-```bash
-cd page-designer
-npm install
-block run
-```
+It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`), which is pre-release — expect occasional API drift if you upgrade it. If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`. Unit tests run with `node --test`.
 
-Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) and an extension registered in your base.
+Heads-up for contributors: the committed `package-lock.json` was generated behind a corporate npm proxy, so its `resolved` URLs aren't publicly reachable — `npm ci` will fail outside that network. Use the scaffold flow above (recommended), or `npm install` to resolve dependencies fresh from the public registry.
 
 ## Notes
 
 - It renders one page per record from the element's record source.
 - It's built for print and PDF output. True 1:1 sizing depends on your browser's print settings (set Margins to None and Scale to 100%), and the view tells you which to set.
 - Present mode uses the browser's fullscreen API. If the host doesn't grant the extension fullscreen, it presents within the extension's panel instead of the whole screen.
+- The design is meant to be edited by one builder at a time. Concurrent edits are last-write-wins, and your undo history resets if someone else edits the design while you have it open.
 
 ## License
 

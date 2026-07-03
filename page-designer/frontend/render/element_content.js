@@ -1,38 +1,28 @@
 // Dispatches an element to its content renderer. Pure presentation: takes an
 // element plus the (optional) record + table and renders the inner content only.
-// Positioning/rotation is applied by PageCanvas via elementBoxStyle. Dynamic
-// content (merge tokens, value formatting, conditional color) resolves here.
+// Positioning/rotation is applied by PageCanvas via elementBoxStyle. Merge tokens
+// ({Field name}) resolve here.
 
 import {memo} from 'react';
 import {FieldType} from '@airtable/blocks/interface/models';
 import {ElementKind, LinkedRecordDisplay} from '../domain/element_types.mjs';
 import {extractLinkedRecords, extractSelectChoices} from '../domain/cell_value_helpers.mjs';
-import {renderTemplate, evaluateCondition} from '../domain/dynamic_content.mjs';
+import {renderTemplate, makeFieldTokenResolver} from '../domain/dynamic_content.mjs';
 import {textStyle} from './geometry_style.js';
 import {ImageElement} from './image_element.js';
 import {BarcodeElement} from './barcode_element.js';
 import {LinkedRecordTable} from './linked_record_table.js';
 import {EditableField} from './editable_field.js';
 import {ChoicePill} from './select_pill.js';
-import {SelectStepper} from './select_stepper.js';
+import {SelectStepper, MAX_STEPPER_STEPS} from './select_stepper.js';
+import {RatingDisplay, CheckboxDisplay, CollaboratorDisplay} from './field_display.js';
 import {editableInputKind} from '../domain/editable_fields.mjs';
 
-// Evaluates an element's conditional rules against the current record. Returns
-// whether it should show and an optional text-color override. No rules / no
-// record (editor preview) = always visible, base color.
-export function resolveElementRules(element, record, table) {
-    const rules = element.rules;
-    if (!rules || !record) {
-        return {visible: true, colorOverride: null};
-    }
-    const valueOf = (cond) => {
-        const f = cond && cond.fieldId ? table.getFieldByIdIfExists(cond.fieldId) : null;
-        return f ? record.getCellValueAsString(f) : '';
-    };
-    const visible = rules.visibility ? evaluateCondition(rules.visibility, valueOf(rules.visibility)) : true;
-    const colorOverride =
-        rules.color && evaluateCondition(rules.color, valueOf(rules.color)) ? rules.color.color : null;
-    return {visible, colorOverride};
+// A stepper with too many choices degrades into overlapping circles; render
+// those fields as pills instead.
+function stepperFits(field) {
+    const choices = (field.config && field.config.options && field.config.options.choices) || [];
+    return choices.length <= MAX_STEPPER_STEPS;
 }
 
 function DeletedField() {
@@ -80,10 +70,12 @@ function SelectPills({field, record, css}) {
     );
 }
 
-function FieldText({element, css, record, table, interactive}) {
+function FieldText({element, css, record, table, interactive, editor}) {
     const field = element.fieldId ? table.getFieldByIdIfExists(element.fieldId) : null;
     if (element.fieldId && !field) {
-        return <DeletedField />;
+        // A bound field was deleted. Flag it in the editor so the builder can re-bind;
+        // published viewers/print see nothing rather than a red error box.
+        return editor ? <DeletedField /> : null;
     }
     const label = element.style.showFieldLabel && field ? field.name : null;
     const isLinked = field && field.type === FieldType.MULTIPLE_RECORD_LINKS;
@@ -94,6 +86,11 @@ function FieldText({element, css, record, table, interactive}) {
     const isSelectPill = selectMode === 'pill';
     // Stepper is single-select only.
     const isStepper = selectMode === 'stepper' && field.type === FieldType.SINGLE_SELECT;
+    // Field types that render a glyph (not text) when not being edited inline.
+    const fieldKind = field ? editableInputKind(field.type) : null;
+    const isRating = fieldKind === 'rating';
+    const isCheckbox = fieldKind === 'checkbox';
+    const isCollaborator = fieldKind === 'collaborator' || fieldKind === 'multicollaborator';
     const isInlineEditable =
         interactive && record && field && element.style.editable && editableInputKind(field.type);
 
@@ -107,8 +104,6 @@ function FieldText({element, css, record, table, interactive}) {
                 css={css}
                 selectDisplay={selectMode || 'text'}
                 stepperVariant={element.style.stepperVariant || 'radio'}
-                stepperColor={element.style.stepperColor}
-                stepperTrackColor={element.style.stepperTrackColor}
             />
         );
     } else if (isLinked && linkedMode === LinkedRecordDisplay.TABLE) {
@@ -125,17 +120,24 @@ function FieldText({element, css, record, table, interactive}) {
         body = <LinkedRecordList css={css} field={field} record={record} />;
     } else if (isSelectPill) {
         body = <SelectPills field={field} record={record} css={css} />;
-    } else if (isStepper) {
+    } else if (isStepper && stepperFits(field)) {
         body = (
             <SelectStepper
                 field={field}
                 record={record}
                 css={css}
                 variant={element.style.stepperVariant || 'radio'}
-                accent={element.style.stepperColor}
-                track={element.style.stepperTrackColor}
             />
         );
+    } else if (isStepper) {
+        // Too many choices for a readable stepper: degrade to the pill display.
+        body = <SelectPills field={field} record={record} css={css} />;
+    } else if (isRating) {
+        body = <RatingDisplay field={field} record={record} css={css} />;
+    } else if (isCheckbox) {
+        body = <CheckboxDisplay field={field} record={record} css={css} />;
+    } else if (isCollaborator) {
+        body = <CollaboratorDisplay field={field} record={record} css={css} />;
     } else {
         // Inherit the field's own formatting (currency symbol, percent, decimals,
         // date format) via getCellValueAsString. No record = editor preview: show the
@@ -165,16 +167,7 @@ function FieldText({element, css, record, table, interactive}) {
 }
 
 function StaticText({element, css, record, table}) {
-    // Merge {Field Name} tokens. Preview (no record) shows the field name so the
-    // layout still reads; an unknown field keeps its literal {token}.
-    const resolve = (name) => {
-        const f = table && table.getFieldByNameIfExists ? table.getFieldByNameIfExists(name) : null;
-        if (!f) {
-            return null;
-        }
-        return record ? record.getCellValueAsString(f) : name;
-    };
-    return <div style={css}>{renderTemplate(element.text || '', resolve)}</div>;
+    return <div style={css}>{renderTemplate(element.text || '', makeFieldTokenResolver(table, record))}</div>;
 }
 
 function Line({element}) {
@@ -194,11 +187,11 @@ function Line({element}) {
 
 // Memoized: layout ops preserve element identity for untouched elements, so a
 // drag/edit only re-renders the element that actually changed (not all of them).
-export const ElementContent = memo(function ElementContent({element, record, table, colorOverride, eagerImages, interactive}) {
-    const css = textStyle(colorOverride ? {...element.style, color: colorOverride} : element.style);
+export const ElementContent = memo(function ElementContent({element, record, table, eagerImages, interactive, editor}) {
+    const css = textStyle(element.style);
     switch (element.kind) {
         case ElementKind.FIELD:
-            return <FieldText element={element} css={css} record={record} table={table} interactive={interactive} />;
+            return <FieldText element={element} css={css} record={record} table={table} interactive={interactive} editor={editor} />;
         case ElementKind.TEXT:
             return <StaticText element={element} css={css} record={record} table={table} />;
         case ElementKind.IMAGE:

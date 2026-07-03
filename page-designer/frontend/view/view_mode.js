@@ -5,13 +5,23 @@
 import {useEffect, useRef, useState} from 'react';
 import {PageCanvas, ScaledPage} from '../render/page_canvas.js';
 import {resolvePageSizePx} from '../domain/page_geometry.mjs';
-import {PrintLayer} from './print_layer.js';
+import {PrintLayer, MAX_PRINT_SHEETS} from './print_layer.js';
 import {usePrintMode} from './use_print_mode.js';
 import {Button, Segmented} from '../ui/primitives.js';
 import {PrinterIcon, EmptyIcon, EditIcon, MaximizeIcon, CloseIcon} from '../ui/icons.js';
 import {useContainerWidth, useContainerSize} from '../ui/use_container_width.js';
 import {ZoomControl} from '../ui/zoom_control.js';
 import {isTextEntryTarget} from '../ui/dom.js';
+import {loadLastPosition, saveLastPosition} from '../state/last_position_store.js';
+
+// Sheet index for a stored position, clamped against the current records/pages
+// (either may have changed since the position was saved).
+function sheetIndexFor(pos, recordCount, pageCount) {
+    if (recordCount === 0) return 0;
+    const r = Math.min(pos.recordIndex, recordCount - 1);
+    const p = Math.min(pos.pageIndex, pageCount - 1);
+    return r * pageCount + p;
+}
 
 function ChevronLeft({size = 16}) {
     return (
@@ -32,14 +42,14 @@ function ChevronRight({size = 16}) {
 // A "sheet" is one page of one record. Continuous mode stacks sheets into the DOM,
 // so cap it; single mode still pages through everything. Print is capped separately.
 const MAX_CONTINUOUS_SHEETS = 100;
-const MAX_PRINT_SHEETS = 500;
 
-function EmptyState({icon: Icon, title, subtitle}) {
+function EmptyState({icon: Icon, title, subtitle, action}) {
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-gray-gray500">
             <Icon size={40} />
             <div className="text-sm font-medium text-gray-gray600 dark:text-gray-gray300">{title}</div>
             {subtitle ? <div className="max-w-sm text-xs">{subtitle}</div> : null}
+            {action ? <div className="mt-2">{action}</div> : null}
         </div>
     );
 }
@@ -47,7 +57,13 @@ function EmptyState({icon: Icon, title, subtitle}) {
 export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const {printing, printNow} = usePrintMode(page);
     const [scrollRef, containerWidth] = useContainerWidth();
-    const [currentIndex, setCurrentIndex] = useState(0);
+    // Restore the last viewed sheet (mode flips remount this component). Records can
+    // arrive after mount; keep the position pending until they do.
+    const [currentIndex, setCurrentIndex] = useState(() =>
+        sheetIndexFor(loadLastPosition(table.id), records.length, Math.max(1, pages.length)),
+    );
+    const pendingRestore = useRef(records.length === 0 ? loadLastPosition(table.id) : null);
+    const justRestored = useRef(false); // skip the persist effect for the restore commit
     const [continuous, setContinuous] = useState(false);
     const [zoom, setZoom] = useState(null);
     const [presenting, setPresenting] = useState(false);
@@ -78,10 +94,35 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
         return () => document.removeEventListener('fullscreenchange', onFsChange);
     }, []);
 
-    // Keep the sheet index in range as records/pages change.
+    // Keep the sheet index in range as records/pages change; consume a pending
+    // restore once records have actually arrived.
     useEffect(() => {
+        if (pendingRestore.current && total > 0) {
+            const pos = pendingRestore.current;
+            pendingRestore.current = null;
+            // The persist effect runs later in this same commit with the STALE
+            // currentIndex (0); without this flag it would clobber the stored
+            // position before the restored index lands.
+            justRestored.current = true;
+            setCurrentIndex(sheetIndexFor(pos, records.length, pageCount));
+            return;
+        }
         setCurrentIndex((i) => Math.min(Math.max(i, 0), Math.max(total - 1, 0)));
-    }, [total]);
+    }, [total, records.length, pageCount]);
+
+    // Persist the position (skip until a pending restore has been applied, so the
+    // initial index 0 doesn't overwrite the saved spot before records load).
+    useEffect(() => {
+        if (total === 0 || pendingRestore.current) return;
+        if (justRestored.current) {
+            justRestored.current = false;
+            return;
+        }
+        saveLastPosition(table.id, {
+            recordIndex: Math.floor(currentIndex / pageCount),
+            pageIndex: currentIndex % pageCount,
+        });
+    }, [table.id, currentIndex, pageCount, total]);
 
     const safeIndex = Math.min(Math.max(currentIndex, 0), Math.max(total - 1, 0));
     const recordFor = (idx) => records[Math.floor(idx / pageCount)];
@@ -182,6 +223,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                 icon={EmptyIcon}
                 title="This layout is empty"
                 subtitle="Switch to edit mode in the Interface Designer to add fields, text, and images to the page."
+                action={
+                    onExitPreview ? (
+                        <Button variant="default" size="sm" icon={EditIcon} onClick={onExitPreview}>
+                            Back to editing
+                        </Button>
+                    ) : undefined
+                }
             />
         );
     }
@@ -192,6 +240,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                 icon={EmptyIcon}
                 title="No records to display"
                 subtitle="This extension renders a designed page for each record in its source. Add records or adjust the source filter to see pages."
+                action={
+                    onExitPreview ? (
+                        <Button variant="default" size="sm" icon={EditIcon} onClick={onExitPreview}>
+                            Back to editing
+                        </Button>
+                    ) : undefined
+                }
             />
         );
     }
@@ -200,10 +255,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const visibleSheets = [];
     if (continuous) {
         for (let i = 0; i < Math.min(total, MAX_CONTINUOUS_SHEETS); i += 1) {
-            visibleSheets.push({key: i, record: recordFor(i), entry: entryFor(i)});
+            // Key by record identity: an index key would let React reuse a sheet (and
+            // any open inline-edit draft) for a DIFFERENT record when the feed shifts.
+            visibleSheets.push({key: `${recordFor(i).id}:${i % pageCount}`, record: recordFor(i), entry: entryFor(i)});
         }
     } else {
-        visibleSheets.push({key: safeIndex, record: recordFor(safeIndex), entry: entryFor(safeIndex)});
+        const rec = recordFor(safeIndex);
+        visibleSheets.push({key: `${rec ? rec.id : safeIndex}:${safeIndex % pageCount}`, record: rec, entry: entryFor(safeIndex)});
     }
 
     const presentRecord = recordFor(safeIndex);
@@ -276,6 +334,15 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                     </Button>
                 </div>
             </div>
+
+            <div className="pd-screen-only border-b border-gray-gray200 bg-gray-gray25 px-4 py-1 text-[11px] text-gray-gray500 dark:border-gray-gray700 dark:bg-gray-gray800">
+
+                For exact sizing, set <span className="font-medium">Margins: None</span> and{' '}
+
+                <span className="font-medium">Scale: 100%</span> in the print dialog.
+
+            </div>
+
 
             {(continuous && continuousCapped) || printCapped ? (
                 <div className="pd-screen-only space-y-0.5 border-b border-yellow-yellowLight1 bg-yellow-yellowLight2 px-4 py-1 text-[11px] text-yellow-yellowDark1 dark:border-yellow-yellowDark1 dark:bg-yellow-yellowDark1 dark:text-white">

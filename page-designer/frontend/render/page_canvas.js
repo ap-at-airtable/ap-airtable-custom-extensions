@@ -6,7 +6,8 @@
 import {resolvePageSizePx} from '../domain/page_geometry.mjs';
 import {getOrderedElements} from '../domain/layout_model.mjs';
 import {elementBoxStyle, elementContentStyle} from './geometry_style.js';
-import {ElementContent, resolveElementRules} from './element_content.js';
+import {ElementContent} from './element_content.js';
+import {renderTemplate, makeFieldTokenResolver} from '../domain/dynamic_content.mjs';
 import {ElementBoundary} from '../ui/error_boundary.js';
 
 // Shown in place of an element whose render throws. Silent (null) when published so
@@ -64,12 +65,6 @@ export function PageCanvas({
             >
                 <div style={{position: 'absolute', inset: 0}}>
                     {elements.map((element) => {
-                        const {visible, colorOverride} = resolveElementRules(element, record, table);
-                        // Hidden by a rule: drop it entirely when published/printed; in the
-                        // editor keep it (dimmed) so the builder can still select and edit it.
-                        if (!visible && !editor) {
-                            return null;
-                        }
                         // Cell-value signature: Record objects mutate in place (stable ref),
                         // so ElementContent's memo would miss a field's value changing —
                         // including server-recomputed formula/rollup values after an edit.
@@ -80,6 +75,15 @@ export function PageCanvas({
                         if (boundField && record) {
                             try {
                                 valueKey = record.getCellValueAsString(boundField);
+                            } catch {
+                                valueKey = null;
+                            }
+                        } else if (record && typeof element.text === 'string' && element.text.includes('{')) {
+                            // TEXT with {Field} merge tokens has no fieldId, so bust the
+                            // memo with the resolved string (StaticText's own resolver, so
+                            // the key tracks exactly what renders).
+                            try {
+                                valueKey = renderTemplate(element.text, makeFieldTokenResolver(table, record));
                             } catch {
                                 valueKey = null;
                             }
@@ -95,7 +99,6 @@ export function PageCanvas({
                                 key={element.id}
                                 style={{
                                     ...elementBoxStyle(element),
-                                    opacity: visible ? undefined : 0.4,
                                     zIndex: editableInteractive ? 1 : undefined,
                                 }}
                             >
@@ -108,9 +111,9 @@ export function PageCanvas({
                                             element={element}
                                             record={record}
                                             table={table}
-                                            colorOverride={colorOverride}
                                             eagerImages={eagerImages}
                                             interactive={interactive}
+                                            editor={editor}
                                             valueKey={valueKey}
                                         />
                                     </ElementBoundary>
