@@ -24,7 +24,7 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
     const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
     // Hooks must be unconditional — always pass a valid table (fall back to the
     // primary table; its records are ignored when there's no linked table).
-    const linkedRecords = useRecords(linkedTable || table);
+    const linkedRecords = useRecords(linkedTable || table) || [];
     const [creating, setCreating] = useState(false);
     const [addError, setAddError] = useState(false);
     const [menu, setMenu] = useState(null); // {x, y, id} right-click / long-press delete menu

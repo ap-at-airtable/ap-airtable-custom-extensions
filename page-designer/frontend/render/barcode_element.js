@@ -95,7 +95,9 @@ export function BarcodeElement({element, record, table}) {
         <div className="relative h-full w-full">
             <div ref={containerRef} className="flex h-full w-full items-center justify-center" />
             {status === 'error' ? (
-                <Fallback label={isQr ? 'Could not encode QR code' : 'Could not encode barcode'} text={text} />
+                <div className="absolute inset-0">
+                    <Fallback label={isQr ? 'Could not encode QR code' : 'Could not encode barcode'} text={text} />
+                </div>
             ) : null}
         </div>
     );

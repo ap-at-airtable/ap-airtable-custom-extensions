@@ -22,7 +22,7 @@ const HANDLES = [
     {key: 'w', dirX: -1, dirY: 0, cursor: 'ew-resize', left: 0, top: '50%'},
 ];
 
-function beginGesture(e, {onMove, onEnd}) {
+function beginGesture(e, {onMove, onEnd, onCancel}) {
     e.preventDefault();
     e.stopPropagation();
     const startX = e.clientX;
@@ -40,7 +40,7 @@ function beginGesture(e, {onMove, onEnd}) {
     const cleanup = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
-        window.removeEventListener('pointercancel', cleanup);
+        window.removeEventListener('pointercancel', cancel);
         try {
             target.releasePointerCapture?.(pointerId);
         } catch {
@@ -51,9 +51,16 @@ function beginGesture(e, {onMove, onEnd}) {
         cleanup();
         if (onEnd) onEnd({dx: ev.clientX - startX, dy: ev.clientY - startY, event: ev});
     };
+    // pointercancel (e.g. the browser reclaims a touch for scrolling) must reset the
+    // caller's transient state, not just drop listeners — else marquee/drag previews
+    // strand on screen. It must NOT commit like `up` does.
+    const cancel = () => {
+        cleanup();
+        if (onCancel) onCancel();
+    };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
-    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('pointercancel', cancel);
 }
 
 export function EditorCanvas({
@@ -96,6 +103,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx, dy}) => onPreview(patchesFor(dx, dy)),
             onEnd: ({dx, dy}) => onCommit(patchesFor(dx, dy)),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -129,6 +137,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx, dy}) => onPreview({[id]: computeResized(start, dir, dx, dy)}),
             onEnd: ({dx, dy}) => onCommit({[id]: computeResized(start, dir, dx, dy)}),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -146,6 +155,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({event}) => onPreview({[id]: {rotation: angleFor(event)}}),
             onEnd: ({event}) => onCommit({[id]: {rotation: angleFor(event)}}),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -172,6 +182,7 @@ export function EditorCanvas({
         beginGesture(e, {
             onMove: ({dx}) => onPreview(compute(dx)),
             onEnd: ({dx}) => onCommit(compute(dx)),
+            onCancel: () => onPreview({}),
         });
     };
 
@@ -204,6 +215,7 @@ export function EditorCanvas({
                         transform: 'translateX(-50%)',
                         cursor: 'col-resize',
                         zIndex: 5,
+                        touchAction: 'none',
                     }}
                 >
                     <div
@@ -232,6 +244,7 @@ export function EditorCanvas({
         const origin = toPage(e);
         const additive = e.shiftKey || e.metaKey || e.ctrlKey;
         beginGesture(e, {
+            onCancel: () => setMarquee(null),
             onMove: ({event}) => {
                 const cur = toPage(event);
                 setMarquee({x0: origin.x, y0: origin.y, x1: cur.x, y1: cur.y});
@@ -357,6 +370,7 @@ export function EditorCanvas({
                                     : undefined,
                                 transformOrigin: 'center center',
                                 cursor: 'move',
+                                touchAction: 'none',
                                 outline: selected
                                     ? '1.5px solid rgb(22,110,225)'
                                     : '1px solid rgba(22,110,225,0.12)',
@@ -381,6 +395,7 @@ export function EditorCanvas({
                                             border: '1.5px solid rgb(22,110,225)',
                                             boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
                                             cursor: 'grab',
+                                            touchAction: 'none',
                                         }}
                                     />
                                     {element.rotation === 0
@@ -402,6 +417,7 @@ export function EditorCanvas({
                                                       border: '1.5px solid rgb(22,110,225)',
                                                       boxShadow: '0 1px 2px rgba(0,0,0,0.25)',
                                                       cursor: h.cursor,
+                                                      touchAction: 'none',
                                                   }}
                                               />
                                           ))

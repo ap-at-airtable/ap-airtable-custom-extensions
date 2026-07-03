@@ -80,12 +80,6 @@ export function defaultStyle() {
         editable: false,
         lineColor: '#1d1f25',
         lineThickness: 1,
-        // Value formatting for FIELD elements (numberFormat 'auto' = the field's
-        // own display string).
-        numberFormat: 'auto',
-        decimals: null,
-        prefix: '',
-        suffix: '',
     };
 }
 

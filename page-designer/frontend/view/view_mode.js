@@ -5,7 +5,7 @@
 import {useEffect, useRef, useState} from 'react';
 import {PageCanvas, ScaledPage} from '../render/page_canvas.js';
 import {resolvePageSizePx} from '../domain/page_geometry.mjs';
-import {PrintLayer} from './print_layer.js';
+import {PrintLayer, MAX_PRINT_SHEETS} from './print_layer.js';
 import {usePrintMode} from './use_print_mode.js';
 import {Button, Segmented} from '../ui/primitives.js';
 import {PrinterIcon, EmptyIcon, EditIcon, MaximizeIcon, CloseIcon} from '../ui/icons.js';
@@ -42,14 +42,14 @@ function ChevronRight({size = 16}) {
 // A "sheet" is one page of one record. Continuous mode stacks sheets into the DOM,
 // so cap it; single mode still pages through everything. Print is capped separately.
 const MAX_CONTINUOUS_SHEETS = 100;
-const MAX_PRINT_SHEETS = 500;
 
-function EmptyState({icon: Icon, title, subtitle}) {
+function EmptyState({icon: Icon, title, subtitle, action}) {
     return (
         <div className="flex h-full flex-col items-center justify-center gap-2 p-8 text-center text-gray-gray500">
             <Icon size={40} />
             <div className="text-sm font-medium text-gray-gray600 dark:text-gray-gray300">{title}</div>
             {subtitle ? <div className="max-w-sm text-xs">{subtitle}</div> : null}
+            {action ? <div className="mt-2">{action}</div> : null}
         </div>
     );
 }
@@ -214,6 +214,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                 icon={EmptyIcon}
                 title="This layout is empty"
                 subtitle="Switch to edit mode in the Interface Designer to add fields, text, and images to the page."
+                action={
+                    onExitPreview ? (
+                        <Button variant="default" size="sm" icon={EditIcon} onClick={onExitPreview}>
+                            Back to editing
+                        </Button>
+                    ) : undefined
+                }
             />
         );
     }
@@ -224,6 +231,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                 icon={EmptyIcon}
                 title="No records to display"
                 subtitle="This extension renders a designed page for each record in its source. Add records or adjust the source filter to see pages."
+                action={
+                    onExitPreview ? (
+                        <Button variant="default" size="sm" icon={EditIcon} onClick={onExitPreview}>
+                            Back to editing
+                        </Button>
+                    ) : undefined
+                }
             />
         );
     }

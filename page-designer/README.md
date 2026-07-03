@@ -7,8 +7,7 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 ## Features
 
 - Drag, resize, and rotate fields, text, images, lines, barcodes, and QR codes on a real page canvas
-- Merge record values into text with `{Field name}`, plus number/currency/percent formatting and prefixes and suffixes
-- Conditional visibility and conditional color, so a page reacts to the record (turn an "Overdue" status red, hide an empty field)
+- Merge record values into text with `{Field name}`; field values render with the field's own formatting (currency, percent, decimals)
 - Linked records as a comma list, a bulleted list, or a table with the columns you pick
 - Letter, A4, legal, and slide sizes, page background color, zoom, and a single-page or continuous view
 - Multi-select with align and distribute, a snap grid, and undo/redo (Cmd/Ctrl+Z)
@@ -32,19 +31,35 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 
 This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`). That SDK is pre-release, so the exact build is pinned in `package-lock.json` — install with `npm ci` for a reproducible tree, and expect occasional API drift if you later upgrade.
 
+Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) (`npm install -g @airtable/blocks-cli`).
+
+1. **Create your own custom extension** in Airtable: edit an Interface page, add a **Custom element**, and choose to build a new custom extension. Airtable shows CLI instructions with your new extension's **block ID** (`blk...`).
+2. **Point this clone at it.** A fresh clone has no remote binding, so `block run`/`block release` will fail until you create `.block/remote.json` (gitignored) with your ID:
+
+```json
+{
+    "blockId": "blkYourBlockIdHere",
+    "baseId": "NONE"
+}
+```
+
+3. **Install and run:**
+
 ```bash
 cd page-designer
 npm ci        # reproducible install (pins the preview SDK); use `npm install` to update
 block run     # bundles + serves the extension locally
+block release # publish it to your base
 ```
 
-Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) and a custom extension registered for an interface page in your base (create one, point it at your `block run` dev build, and `block release` to publish). If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`.
+Point the Custom element at your `block run` dev URL while developing, then `block release` to publish. If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`.
 
 ## Notes
 
 - It renders one page per record from the element's record source.
 - It's built for print and PDF output. True 1:1 sizing depends on your browser's print settings (set Margins to None and Scale to 100%), and the view tells you which to set.
 - Present mode uses the browser's fullscreen API. If the host doesn't grant the extension fullscreen, it presents within the extension's panel instead of the whole screen.
+- The design is meant to be edited by one builder at a time. Concurrent edits are last-write-wins, and your undo history resets if someone else edits the design while you have it open.
 
 ## License
 

@@ -68,14 +68,18 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const bottomRef = useRef(null); // sentinel below the last page, for scroll-into-view
     const restoredPageRef = useRef(null); // wrapper of the restored page, for the one-time scroll
     const didRestoreScroll = useRef(false);
+    // Page index awaiting delete confirmation (a misclick shouldn't destroy a page).
+    const [confirmDeletePage, setConfirmDeletePage] = useState(null);
 
     const fieldList = table.fields.map((f) => ({id: f.id, name: f.name, type: f.config.type}));
 
     const {printing, printNow} = usePrintMode(config.page);
 
-    // Keep the active page index in range as pages are added/removed.
+    // Keep the active page index in range as pages are added/removed, and drop any
+    // pending delete confirmation (its index may now point at a different page).
     useEffect(() => {
         setPageIndex((i) => Math.min(Math.max(i, 0), config.pages.length - 1));
+        setConfirmDeletePage(null);
     }, [config.pages.length]);
 
     // After a page is added and has rendered, scroll it into view. scrollIntoView on
@@ -178,6 +182,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     // Move a page one slot (to = from ± 1). Keep the active page focused through the swap.
     const handleMovePage = (from, to) => {
         setDragOverride(null);
+        setConfirmDeletePage(null);
         config.movePage(from, to).then(() => setError(null), onSaveError);
         setPageIndex((cur) => (cur === from ? to : cur === to ? from : cur));
     };
@@ -515,7 +520,30 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                             <span className="text-[11px] font-medium text-gray-gray400">
                                                 Page {i + 1}
                                             </span>
-                                            {multiPage ? (
+                                            {multiPage && confirmDeletePage === i ? (
+                                                <div className="flex items-center gap-1.5 text-[11px]">
+                                                    <span className="text-gray-gray500">
+                                                        Delete this page and its elements?
+                                                    </span>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => setConfirmDeletePage(null)}
+                                                        className="rounded px-1.5 py-0.5 font-medium text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700"
+                                                    >
+                                                        Cancel
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => {
+                                                            setConfirmDeletePage(null);
+                                                            handleRemovePage(i);
+                                                        }}
+                                                        className="rounded bg-red-red px-1.5 py-0.5 font-medium text-white hover:opacity-90"
+                                                    >
+                                                        Delete
+                                                    </button>
+                                                </div>
+                                            ) : multiPage ? (
                                                 <div className="flex items-center gap-0.5">
                                                     <button
                                                         type="button"
@@ -541,7 +569,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                                         type="button"
                                                         aria-label={`Delete page ${i + 1}`}
                                                         title="Delete page"
-                                                        onClick={() => handleRemovePage(i)}
+                                                        onClick={() => setConfirmDeletePage(i)}
                                                         className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
                                                     >
                                                         <TrashIcon size={15} />

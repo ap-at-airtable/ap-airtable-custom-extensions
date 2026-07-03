@@ -3,7 +3,7 @@
 // per page of the document ({backgroundColor, layout}). Writes are optimistic;
 // transient drag state lives in the editor and commits here on pointer-up.
 
-import {useCallback, useMemo, useRef, useState} from 'react';
+import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useGlobalConfig} from '@airtable/blocks/interface/ui';
 import {ConfigKey, defaultPage, defaultPageEntry, SCHEMA_VERSION} from '../domain/config_keys.mjs';
 import {hydratePages} from '../domain/layout_model.mjs';
@@ -49,6 +49,28 @@ export function useConfigDocument() {
     const docRef = useRef({page, pages});
     docRef.current = {page, pages};
 
+    // Multiplayer guard: undo snapshots are only valid against our own writes. When
+    // the doc changes and it is not the echo of something this client wrote, another
+    // builder (or tab) edited it - restoring a snapshot would silently revert their
+    // work, so drop the history instead. Writers record their payload below.
+    const lastWrittenRef = useRef(null);
+    useEffect(() => {
+        const current = JSON.stringify({page, pages});
+        if (lastWrittenRef.current === null) {
+            lastWrittenRef.current = current;
+            return;
+        }
+        if (current === lastWrittenRef.current) {
+            return;
+        }
+        lastWrittenRef.current = current;
+        if (past.current.length || future.current.length) {
+            past.current = [];
+            future.current = [];
+            bumpHistory((n) => n + 1);
+        }
+    }, [page, pages]);
+
     const pushUndo = useCallback(() => {
         past.current.push(docRef.current);
         if (past.current.length > MAX_HISTORY) {
@@ -64,6 +86,7 @@ export function useConfigDocument() {
             if (estimateDocBytes(docRef.current.page, nextPages) > MAX_DOC_BYTES) {
                 return Promise.reject(new Error('DOC_TOO_LARGE'));
             }
+            lastWrittenRef.current = JSON.stringify({page: docRef.current.page, pages: nextPages});
             return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGES], value: nextPages},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
@@ -97,6 +120,7 @@ export function useConfigDocument() {
                 return Promise.reject(new Error('DOC_TOO_LARGE'));
             }
             pushUndo();
+            lastWrittenRef.current = JSON.stringify({page: nextPage, pages: docRef.current.pages});
             return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGE], value: nextPage},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
@@ -140,13 +164,15 @@ export function useConfigDocument() {
     );
 
     const restore = useCallback(
-        (snap) =>
-            globalConfig.setPathsAsync([
+        (snap) => {
+            lastWrittenRef.current = JSON.stringify({page: snap.page, pages: snap.pages});
+            return globalConfig.setPathsAsync([
                 {path: [ConfigKey.PAGE], value: snap.page},
                 {path: [ConfigKey.PAGES], value: snap.pages},
                 {path: [ConfigKey.SCHEMA_VERSION], value: SCHEMA_VERSION},
                 {path: [ConfigKey.LAYOUT], value: undefined},
-            ]),
+            ]);
+        },
         [globalConfig],
     );
 
