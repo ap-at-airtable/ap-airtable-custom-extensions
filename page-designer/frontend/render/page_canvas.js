@@ -7,7 +7,7 @@ import {resolvePageSizePx} from '../domain/page_geometry.mjs';
 import {getOrderedElements} from '../domain/layout_model.mjs';
 import {elementBoxStyle, elementContentStyle} from './geometry_style.js';
 import {ElementContent} from './element_content.js';
-import {renderTemplate} from '../domain/dynamic_content.mjs';
+import {renderTemplate, makeFieldTokenResolver} from '../domain/dynamic_content.mjs';
 import {ElementBoundary} from '../ui/error_boundary.js';
 
 // Shown in place of an element whose render throws. Silent (null) when published so
@@ -80,15 +80,10 @@ export function PageCanvas({
                             }
                         } else if (record && typeof element.text === 'string' && element.text.includes('{')) {
                             // TEXT with {Field} merge tokens has no fieldId, so bust the
-                            // memo with the resolved string (same resolver as StaticText).
+                            // memo with the resolved string (StaticText's own resolver, so
+                            // the key tracks exactly what renders).
                             try {
-                                valueKey = renderTemplate(element.text, (name) => {
-                                    const f =
-                                        table && table.getFieldByNameIfExists
-                                            ? table.getFieldByNameIfExists(name)
-                                            : null;
-                                    return f ? record.getCellValueAsString(f) : null;
-                                });
+                                valueKey = renderTemplate(element.text, makeFieldTokenResolver(table, record));
                             } catch {
                                 valueKey = null;
                             }

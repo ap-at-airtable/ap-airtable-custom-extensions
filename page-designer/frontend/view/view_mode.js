@@ -63,6 +63,7 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
         sheetIndexFor(loadLastPosition(table.id), records.length, Math.max(1, pages.length)),
     );
     const pendingRestore = useRef(records.length === 0 ? loadLastPosition(table.id) : null);
+    const justRestored = useRef(false); // skip the persist effect for the restore commit
     const [continuous, setContinuous] = useState(false);
     const [zoom, setZoom] = useState(null);
     const [presenting, setPresenting] = useState(false);
@@ -99,6 +100,10 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
         if (pendingRestore.current && total > 0) {
             const pos = pendingRestore.current;
             pendingRestore.current = null;
+            // The persist effect runs later in this same commit with the STALE
+            // currentIndex (0); without this flag it would clobber the stored
+            // position before the restored index lands.
+            justRestored.current = true;
             setCurrentIndex(sheetIndexFor(pos, records.length, pageCount));
             return;
         }
@@ -109,6 +114,10 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     // initial index 0 doesn't overwrite the saved spot before records load).
     useEffect(() => {
         if (total === 0 || pendingRestore.current) return;
+        if (justRestored.current) {
+            justRestored.current = false;
+            return;
+        }
         saveLastPosition(table.id, {
             recordIndex: Math.floor(currentIndex / pageCount),
             pageIndex: currentIndex % pageCount,
@@ -325,6 +334,15 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                     </Button>
                 </div>
             </div>
+
+            <div className="pd-screen-only border-b border-gray-gray200 bg-gray-gray25 px-4 py-1 text-[11px] text-gray-gray500 dark:border-gray-gray700 dark:bg-gray-gray800">
+
+                For exact sizing, set <span className="font-medium">Margins: None</span> and{' '}
+
+                <span className="font-medium">Scale: 100%</span> in the print dialog.
+
+            </div>
+
 
             {(continuous && continuousCapped) || printCapped ? (
                 <div className="pd-screen-only space-y-0.5 border-b border-yellow-yellowLight1 bg-yellow-yellowLight2 px-4 py-1 text-[11px] text-yellow-yellowDark1 dark:border-yellow-yellowDark1 dark:bg-yellow-yellowDark1 dark:text-white">

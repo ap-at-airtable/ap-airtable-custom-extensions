@@ -7,7 +7,7 @@ import {memo} from 'react';
 import {FieldType} from '@airtable/blocks/interface/models';
 import {ElementKind, LinkedRecordDisplay} from '../domain/element_types.mjs';
 import {extractLinkedRecords, extractSelectChoices} from '../domain/cell_value_helpers.mjs';
-import {renderTemplate} from '../domain/dynamic_content.mjs';
+import {renderTemplate, makeFieldTokenResolver} from '../domain/dynamic_content.mjs';
 import {textStyle} from './geometry_style.js';
 import {ImageElement} from './image_element.js';
 import {BarcodeElement} from './barcode_element.js';
@@ -167,16 +167,7 @@ function FieldText({element, css, record, table, interactive, editor}) {
 }
 
 function StaticText({element, css, record, table}) {
-    // Merge {Field Name} tokens. Preview (no record) shows the field name so the
-    // layout still reads; an unknown field keeps its literal {token}.
-    const resolve = (name) => {
-        const f = table && table.getFieldByNameIfExists ? table.getFieldByNameIfExists(name) : null;
-        if (!f) {
-            return null;
-        }
-        return record ? record.getCellValueAsString(f) : name;
-    };
-    return <div style={css}>{renderTemplate(element.text || '', resolve)}</div>;
+    return <div style={css}>{renderTemplate(element.text || '', makeFieldTokenResolver(table, record))}</div>;
 }
 
 function Line({element}) {

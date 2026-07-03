@@ -5,6 +5,7 @@
 // to the latest local layout. Resize/rotate are single-selection only.
 
 import {useRef, useState} from 'react';
+import {useBase} from '@airtable/blocks/interface/ui';
 import {resolvePageSizePx, PAGE_GRID_SIZE, snapToGrid} from '../domain/page_geometry.mjs';
 import {getOrderedElements, clampElementToPage, clampGroupDelta, columnFractions} from '../domain/layout_model.mjs';
 import {LinkedRecordDisplay} from '../domain/element_types.mjs';
@@ -78,6 +79,7 @@ export function EditorCanvas({
     onDropFields,
 }) {
     const overlayRef = useRef(null);
+    const base = useBase();
     const [marquee, setMarquee] = useState(null);
     const {width: pageW, height: pageH} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -159,10 +161,20 @@ export function EditorCanvas({
         });
     };
 
+    // Column ids that actually render: LinkedRecordTable drops ids whose field was
+    // deleted, so the divider overlay must too or handles desync from columns.
+    const resolvedLinkedColumns = (el) => {
+        const f = el.fieldId ? table.getFieldByIdIfExists(el.fieldId) : null;
+        const linkedTableId = f && f.config && f.config.options ? f.config.options.linkedTableId : null;
+        const linkedTable = linkedTableId ? base.getTableByIdIfExists(linkedTableId) : null;
+        const cols = el.linkedColumns || [];
+        return linkedTable ? cols.filter((id) => linkedTable.getFieldByIdIfExists(id)) : cols;
+    };
+
     // Resize the boundary between columns k and k+1 of a linked-record table,
     // shifting width between just those two (fractions always sum to 1).
     const startColumnResize = (e, el, k) => {
-        const cols = el.linkedColumns || [];
+        const cols = resolvedLinkedColumns(el);
         const pad = el.style.padding || 0;
         const tableWidth = Math.max(1, el.width - 2 * pad);
         const start = columnFractions(cols, el.linkedColumnWidths);
@@ -191,7 +203,7 @@ export function EditorCanvas({
         if (el.style.linkedRecordDisplay !== LinkedRecordDisplay.TABLE || el.rotation) {
             return null;
         }
-        const cols = el.linkedColumns || [];
+        const cols = resolvedLinkedColumns(el);
         if (cols.length < 2) {
             return null;
         }

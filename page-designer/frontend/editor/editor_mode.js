@@ -134,9 +134,9 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         }
     };
 
-    const persistTo = (index, nextLayout) => {
+    const persistTo = (index, nextLayout, coalesceKey) => {
         setDragOverride({index, layout: nextLayout});
-        config.setLayout(index, nextLayout).then(
+        config.setLayout(index, nextLayout, coalesceKey).then(
             () => {
                 setDragOverride(null);
                 setError(null);
@@ -147,7 +147,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             },
         );
     };
-    const persist = (nextLayout) => persistTo(activeIndex, nextLayout);
+    const persist = (nextLayout, coalesceKey) => persistTo(activeIndex, nextLayout, coalesceKey);
 
     // Page-settings panel emits single-key patches: background is per-page, the rest
     // (size/orientation) is shared geometry.
@@ -316,7 +316,9 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             const el = next.elementsById[id];
             if (el) next = updateElement(next, id, clampElementToPage(el, pageW, pageH));
         }
-        persist(next);
+        // Inspector inputs stream per keystroke; coalesce them into one undo step
+        // per element. Everything else (drags, adds, z-order) snapshots per action.
+        persist(next, `el:${id}`);
     };
     const deleteSelected = () => {
         if (!selectedIds.length) return;
