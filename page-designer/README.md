@@ -15,44 +15,39 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 - Print that comes out one clean sheet per record, sized to match what you designed
 - Barcode and QR libraries are bundled, so rendering works with no runtime CDN dependency
 
-## Setup
+## Get it on your base
 
-1. In your Interface, edit a page and add a **Custom element**.
-2. Pick the **table** you want as the record source.
-3. Search for this extension and add it.
-4. Hit **Finish**, then design your layout in edit mode. The published page renders for viewers.
+This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. You publish it to your own base with Airtable's Blocks CLI, using this repo as the source code:
+
+1. **Create a custom extension.** In your Interface, edit a page, add a **Custom element**, and choose to build a new custom extension. Airtable shows you a scaffold command for your new extension, like:
+
+    ```bash
+    block init NONE/blkYourBlockId --template=https://github.com/Airtable/interface-extensions-hello-world my_extension
+    ```
+
+    Run it (it needs the [Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started): `npm install -g @airtable/blocks-cli`). You now have a working scaffold wired to *your* extension, with dependencies installed.
+
+2. **Drop in this code.** Replace the scaffold's `frontend/` folder with the `frontend/` folder from this repo, and make sure its `block.json` points at `frontend/index.js` (this repo's `block.json` already does — you can copy that too).
+
+3. **Release it:**
+
+    ```bash
+    block run      # optional: live-develop it on your page first
+    block release  # publish it to your base
+    ```
+
+4. **Design.** Back in your Interface: point the Custom element at your extension, pick the **table** whose records become pages, hit **Finish**, and lay out your page in edit mode. The published page renders for viewers.
 
 ### Custom properties
 
 - **Title.** An optional heading shown above the view.
 - **Table.** The table whose records each become a page.
 
-## Local development
+## Working on this repo
 
-This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`). That SDK is pre-release, so the exact build is pinned in `package-lock.json` — install with `npm ci` for a reproducible tree, and expect occasional API drift if you later upgrade.
+It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`), which is pre-release — expect occasional API drift if you upgrade it. If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`. Unit tests run with `node --test`.
 
-Requires the [Airtable Blocks CLI](https://airtable.com/developers/extensions/guides/getting-started) (`npm install -g @airtable/blocks-cli`).
-
-1. **Create your own custom extension** in Airtable: edit an Interface page, add a **Custom element**, and choose to build a new custom extension. Airtable shows CLI instructions with your new extension's **block ID** (`blk...`).
-2. **Point this clone at it.** A fresh clone has no remote binding, so `block run`/`block release` will fail until you create `.block/remote.json` (gitignored) with your ID:
-
-```json
-{
-    "blockId": "blkYourBlockIdHere",
-    "baseId": "NONE"
-}
-```
-
-3. **Install and run:**
-
-```bash
-cd page-designer
-npm ci        # reproducible install (pins the preview SDK); use `npm install` to update
-block run     # bundles + serves the extension locally
-block release # publish it to your base
-```
-
-Point the Custom element at your `block run` dev URL while developing, then `block release` to publish. If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`.
+Heads-up for contributors: the committed `package-lock.json` was generated behind a corporate npm proxy, so its `resolved` URLs aren't publicly reachable — `npm ci` will fail outside that network. Use the scaffold flow above (recommended), or `npm install` to resolve dependencies fresh from the public registry.
 
 ## Notes
 
