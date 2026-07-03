@@ -516,12 +516,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                         className="flex flex-col"
                                         style={{width: pageW * scale}}
                                     >
-                                        <div className="relative z-10 mb-2 flex items-center justify-between px-0.5">
+                                        <div className="pointer-events-none relative z-10 mb-2 flex items-center justify-between px-0.5">
                                             <span className="text-[11px] font-medium text-gray-gray400">
                                                 Page {i + 1}
                                             </span>
                                             {multiPage && confirmDeletePage === i ? (
-                                                <div className="flex items-center gap-1.5 text-[11px]">
+                                                <div className="pointer-events-auto flex items-center gap-1.5 text-[11px]">
                                                     <span className="text-gray-gray500">
                                                         Delete this page and its elements?
                                                     </span>
@@ -544,7 +544,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                                     </button>
                                                 </div>
                                             ) : multiPage ? (
-                                                <div className="flex items-center gap-0.5">
+                                                <div className="pointer-events-auto flex items-center gap-0.5">
                                                     <button
                                                         type="button"
                                                         aria-label={`Move page ${i + 1} up`}

@@ -2,6 +2,7 @@
 // text: rating stars and checkbox. Used in view/print/present and the editor
 // preview so they match Airtable's display (and the inline editor's own glyphs).
 
+import {useState} from 'react';
 import {colorUtils} from '@airtable/blocks/interface/ui';
 
 export const RATING_GLYPH = {star: '★', heart: '♥', thumbsUp: '👍', flag: '⚑'};
@@ -63,6 +64,8 @@ function avatarColor(seed) {
 // Profile-pic circle (or a colored initial when there's no pic), matching how
 // Airtable shows collaborators. Size is a CSS length so it scales with the font.
 export function CollaboratorAvatar({person, size = '1.35em'}) {
+    // Profile pic URLs expire; a dead <img> should fall back to the initial avatar.
+    const [imgBroken, setImgBroken] = useState(false);
     const label = (person && (person.name || person.email)) || '';
     const common = {
         width: size,
@@ -74,8 +77,15 @@ export function CollaboratorAvatar({person, size = '1.35em'}) {
         justifyContent: 'center',
         overflow: 'hidden',
     };
-    if (person && person.profilePicUrl) {
-        return <img src={person.profilePicUrl} alt="" style={{...common, objectFit: 'cover'}} />;
+    if (person && person.profilePicUrl && !imgBroken) {
+        return (
+            <img
+                src={person.profilePicUrl}
+                alt=""
+                onError={() => setImgBroken(true)}
+                style={{...common, objectFit: 'cover'}}
+            />
+        );
     }
     return (
         <span

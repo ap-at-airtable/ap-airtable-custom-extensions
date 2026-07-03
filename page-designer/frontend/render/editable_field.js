@@ -15,7 +15,7 @@ import {
 import {EditIcon} from '../ui/icons.js';
 import {COARSE} from '../ui/pointer.js';
 import {ChoicePill} from './select_pill.js';
-import {SelectStepper} from './select_stepper.js';
+import {SelectStepper, MAX_STEPPER_STEPS} from './select_stepper.js';
 import {RATING_GLYPH, RatingDisplay, CheckboxDisplay, CollaboratorAvatar} from './field_display.js';
 
 const ACCENT = 'rgba(22,110,225';
@@ -46,6 +46,7 @@ export function EditableField({
     const restRef = useRef(null); // resting display, for focus restoration
     const savedTimer = useRef(null);
     const wasActive = useRef(false);
+    const initialDraft = useRef(''); // draft at edit-start, so no-op blurs don't write
     const [hover, setHover] = useState(false);
     const [editing, setEditing] = useState(false);
     const [draft, setDraft] = useState('');
@@ -97,7 +98,10 @@ export function EditableField({
     // keyboard users keep their place and can Tab onward.
     useEffect(() => {
         const activeNow = editing || !!anchor;
-        if (!activeNow && wasActive.current) restRef.current?.focus?.();
+        // Only reclaim focus if nothing else took it (an async save resolving must
+        // not yank focus out of an editor the user has since opened elsewhere).
+        const focusIsFree = !document.activeElement || document.activeElement === document.body;
+        if (!activeNow && wasActive.current && focusIsFree) restRef.current?.focus?.();
         wasActive.current = activeNow;
     }, [editing, anchor]);
 
@@ -273,7 +277,7 @@ export function EditableField({
     // like "anyone at <company> can edit" aren't enumerated, so the SDK can't offer
     // them the way Airtable's server-backed picker does. Say so in the empty state
     // and point at the fix: direct collaborators are never truncated.
-    const COLLABORATOR_EMPTY_HINT = 'People with general access may not appear here. Share this app with them directly to assign them.';
+    const COLLABORATOR_EMPTY_HINT = 'Some people with access may not appear here. Share this app with them directly to assign them.';
     const popover = (options, {multi, selectedIds, onPick, emptyHint}) => {
         if (!anchor) return null;
         const q = query.trim().toLowerCase();
@@ -483,7 +487,9 @@ export function EditableField({
 
     if (kind === 'select') {
         // Stepper is its own control (click a step to set the value) — no popover.
-        if (selectDisplay === 'stepper') {
+        // With too many choices it degrades to overlap; use the popover editor then.
+        const stepperChoices = (field.config && field.config.options && field.config.options.choices) || [];
+        if (selectDisplay === 'stepper' && stepperChoices.length <= MAX_STEPPER_STEPS) {
             return frame(
                 <SelectStepper
                     field={field}
@@ -546,7 +552,9 @@ export function EditableField({
     if (kind === 'date' || kind === 'datetime') {
         if (!editing) {
             const start = () => {
-                setDraft(isoToInputValue(kind, record.getCellValue(field)));
+                const v = isoToInputValue(kind, record.getCellValue(field));
+                initialDraft.current = v;
+                setDraft(v);
                 setError(false);
                 setEditing(true);
             };
@@ -565,10 +573,18 @@ export function EditableField({
                 value={draft}
                 disabled={saving}
                 onChange={(e) => setDraft(e.target.value)}
-                onBlur={() => commit(inputValueToIso(kind, draft))}
+                onBlur={() => {
+                    // Unchanged drafts must not write: datetime-local is minute-granular,
+                    // so a no-op commit would silently truncate stored seconds.
+                    if (draft === initialDraft.current) setEditing(false);
+                    else commit(inputValueToIso(kind, draft));
+                }}
                 onKeyDown={(e) => {
                     if (e.key === 'Escape') setEditing(false);
-                    else if (e.key === 'Enter') commit(inputValueToIso(kind, draft));
+                    else if (e.key === 'Enter') {
+                        if (draft === initialDraft.current) setEditing(false);
+                        else commit(inputValueToIso(kind, draft));
+                    }
                 }}
                 style={{...css, color: EDIT_TEXT, width: '100%', boxSizing: 'border-box', border: 'none', outline: 'none', background: 'transparent', padding: 0}}
             />,
@@ -625,7 +641,9 @@ export function EditableField({
     if (!editing) {
         const start = () => {
             const v = record.getCellValue(field);
-            setDraft(v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v));
+            const d = v == null ? '' : String(isPercent ? +(v * 100).toFixed(8) : v);
+            initialDraft.current = d;
+            setDraft(d);
             setError(false);
             setEditing(true);
         };
@@ -637,7 +655,17 @@ export function EditableField({
         );
     }
 
-    const commitText = () => {
+    const commitText = (e) => {
+        if (draft === initialDraft.current) {
+            setEditing(false);
+            return;
+        }
+        // Chrome sanitizes invalid <input type=number> text to '' (validity.badInput);
+        // committing that would turn a typo into a silent cell clear.
+        if (kind === 'number' && e && e.target && e.target.validity && e.target.validity.badInput) {
+            setEditing(false);
+            return;
+        }
         if (kind === 'number' && draft.trim() !== '' && !Number.isFinite(Number(draft))) {
             setEditing(false);
             return;
@@ -651,7 +679,7 @@ export function EditableField({
             setEditing(false);
         } else if (e.key === 'Enter' && kind !== 'textarea') {
             e.preventDefault();
-            commitText();
+            commitText(e);
         }
     };
     const inputStyle = {

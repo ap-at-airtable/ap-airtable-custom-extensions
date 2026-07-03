@@ -7,6 +7,10 @@
 import {colorUtils} from '@airtable/blocks/interface/ui';
 import {ChoicePill, choiceColorName} from './select_pill.js';
 
+// Beyond this many choices the circles overlap into an unreadable strip; callers
+// fall back to pill/popover rendering instead.
+export const MAX_STEPPER_STEPS = 12;
+
 const RAIL = '#dfe1e5'; // connectors + inactive outlines
 const SOFT = '#f2f4f8'; // inactive circle fill (a hint of gray, not stark white)
 const TEXT = '#8a8f98'; // non-selected labels + numbers

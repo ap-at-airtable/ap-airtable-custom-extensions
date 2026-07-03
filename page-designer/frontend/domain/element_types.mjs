@@ -132,13 +132,22 @@ export function hydrateElement(raw) {
         return null;
     }
     const base = makeElement({id: raw.id, kind: raw.kind, x: 0, y: 0});
+    const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
     return {
         ...base,
         ...raw,
-        // Sanitize geometry: a corrupt/legacy non-numeric x/y would otherwise pass
-        // through and break absolute positioning.
-        x: typeof raw.x === 'number' ? raw.x : 0,
-        y: typeof raw.y === 'number' ? raw.y : 0,
+        // Sanitize everything the renderer does math on: corrupt/legacy values
+        // (non-numeric geometry, non-array columns) must not reach layout code.
+        x: num(raw.x, 0),
+        y: num(raw.y, 0),
+        width: Math.max(1, num(raw.width, base.width)),
+        height: Math.max(1, num(raw.height, base.height)),
+        rotation: num(raw.rotation, 0),
+        linkedColumns: Array.isArray(raw.linkedColumns) ? raw.linkedColumns : [],
+        linkedColumnWidths:
+            raw.linkedColumnWidths && typeof raw.linkedColumnWidths === 'object' && !Array.isArray(raw.linkedColumnWidths)
+                ? raw.linkedColumnWidths
+                : {},
         style: {...base.style, ...(raw.style && typeof raw.style === 'object' ? raw.style : {})},
     };
 }

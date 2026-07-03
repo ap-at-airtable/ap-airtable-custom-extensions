@@ -71,12 +71,21 @@ export function useConfigDocument() {
         }
     }, [page, pages]);
 
+    // Coalesce rapid writes (per-keystroke inspector edits) into one undo step;
+    // new edits still invalidate redo either way.
+    const lastPushAt = useRef(0);
     const pushUndo = useCallback(() => {
+        const now = Date.now();
+        future.current = [];
+        if (now - lastPushAt.current < 1200 && past.current.length > 0) {
+            bumpHistory((n) => n + 1);
+            return;
+        }
+        lastPushAt.current = now;
         past.current.push(docRef.current);
         if (past.current.length > MAX_HISTORY) {
             past.current.shift();
         }
-        future.current = [];
         bumpHistory((n) => n + 1);
     }, []);
 

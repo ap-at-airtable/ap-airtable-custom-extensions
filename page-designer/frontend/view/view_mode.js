@@ -246,10 +246,13 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
     const visibleSheets = [];
     if (continuous) {
         for (let i = 0; i < Math.min(total, MAX_CONTINUOUS_SHEETS); i += 1) {
-            visibleSheets.push({key: i, record: recordFor(i), entry: entryFor(i)});
+            // Key by record identity: an index key would let React reuse a sheet (and
+            // any open inline-edit draft) for a DIFFERENT record when the feed shifts.
+            visibleSheets.push({key: `${recordFor(i).id}:${i % pageCount}`, record: recordFor(i), entry: entryFor(i)});
         }
     } else {
-        visibleSheets.push({key: safeIndex, record: recordFor(safeIndex), entry: entryFor(safeIndex)});
+        const rec = recordFor(safeIndex);
+        visibleSheets.push({key: `${rec ? rec.id : safeIndex}:${safeIndex % pageCount}`, record: rec, entry: entryFor(safeIndex)});
     }
 
     const presentRecord = recordFor(safeIndex);

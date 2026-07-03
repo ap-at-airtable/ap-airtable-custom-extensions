@@ -14,9 +14,16 @@ import {BarcodeElement} from './barcode_element.js';
 import {LinkedRecordTable} from './linked_record_table.js';
 import {EditableField} from './editable_field.js';
 import {ChoicePill} from './select_pill.js';
-import {SelectStepper} from './select_stepper.js';
+import {SelectStepper, MAX_STEPPER_STEPS} from './select_stepper.js';
 import {RatingDisplay, CheckboxDisplay, CollaboratorDisplay} from './field_display.js';
 import {editableInputKind} from '../domain/editable_fields.mjs';
+
+// A stepper with too many choices degrades into overlapping circles; render
+// those fields as pills instead.
+function stepperFits(field) {
+    const choices = (field.config && field.config.options && field.config.options.choices) || [];
+    return choices.length <= MAX_STEPPER_STEPS;
+}
 
 function DeletedField() {
     return (
@@ -113,7 +120,7 @@ function FieldText({element, css, record, table, interactive, editor}) {
         body = <LinkedRecordList css={css} field={field} record={record} />;
     } else if (isSelectPill) {
         body = <SelectPills field={field} record={record} css={css} />;
-    } else if (isStepper) {
+    } else if (isStepper && stepperFits(field)) {
         body = (
             <SelectStepper
                 field={field}
@@ -122,6 +129,9 @@ function FieldText({element, css, record, table, interactive, editor}) {
                 variant={element.style.stepperVariant || 'radio'}
             />
         );
+    } else if (isStepper) {
+        // Too many choices for a readable stepper: degrade to the pill display.
+        body = <SelectPills field={field} record={record} css={css} />;
     } else if (isRating) {
         body = <RatingDisplay field={field} record={record} css={css} />;
     } else if (isCheckbox) {
