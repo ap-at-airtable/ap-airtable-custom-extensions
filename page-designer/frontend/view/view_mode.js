@@ -282,7 +282,8 @@ export function ViewMode({page, pages, records, table, title, onExitPreview}) {
                         ) : null}
                     </div>
                     <div className="text-xs text-gray-gray500">
-                        {total} {total === 1 ? 'page' : 'pages'}
+                        {records.length} {records.length === 1 ? 'record' : 'records'}
+                        {pageCount > 1 ? ` · ${pageCount} pages each` : ''}
                     </div>
                 </div>
                 <div className="flex items-center gap-2">

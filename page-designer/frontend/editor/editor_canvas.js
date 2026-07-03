@@ -346,8 +346,8 @@ export function EditorCanvas({
                     <div className="max-w-xs text-center text-gray-gray500">
                         <div className="text-sm font-medium text-gray-gray500">Empty page</div>
                         <div className="mt-1 text-xs">
-                            Add a field, text, image, or barcode from the toolbar above to start
-                            designing.
+                            Add fields from the list on the left, or text, images, and
+                            barcodes from the toolbar above.
                         </div>
                     </div>
                 </div>
