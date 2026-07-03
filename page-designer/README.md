@@ -19,7 +19,7 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 
 This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. You publish it to your own base with Airtable's Blocks CLI, using this repo as the source code:
 
-1. **Create a custom extension.** In your Interface, edit a page, add a **Custom element**, and choose to build a new custom extension. Airtable shows you a scaffold command for your new extension, like:
+1. **Create a custom extension.** In your Interface, edit a page, add a **Custom element**, and choose to build a new custom extension. When Airtable asks which template to start from, pick **Hello world (JavaScript)** — this repo's code replaces the scaffold, so the bare-bones one is all you need. Airtable then shows a scaffold command for your new extension, like:
 
     ```bash
     block init NONE/blkYourBlockId --template=https://github.com/Airtable/interface-extensions-hello-world my_extension
