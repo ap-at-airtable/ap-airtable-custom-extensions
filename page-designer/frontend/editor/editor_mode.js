@@ -67,6 +67,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     const pendingScrollBottom = useRef(false);
     const bottomRef = useRef(null); // sentinel below the last page, for scroll-into-view
     const restoredPageRef = useRef(null); // wrapper of the restored page, for the one-time scroll
+    const pageRefs = useRef([]); // page wrappers, for scroll-position targeting
     const didRestoreScroll = useRef(false);
     // Page index awaiting delete confirmation (a misclick shouldn't destroy a page).
     const [confirmDeletePage, setConfirmDeletePage] = useState(null);
@@ -158,6 +159,32 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         write.then(() => setError(null), onSaveError);
     };
 
+    // The page under the viewport center. Palette/rail adds land HERE, not on the
+    // last-clicked page: after scrolling, "the page I'm looking at" is the target.
+    const visiblePageIndex = () => {
+        const container = centerRef.current;
+        if (!container) return activeIndex;
+        const rect = container.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        let best = activeIndex;
+        let bestDist = Infinity;
+        pageRefs.current.forEach((el, i) => {
+            if (!el) return;
+            const r = el.getBoundingClientRect();
+            if (r.top <= midY && r.bottom >= midY) {
+                best = i;
+                bestDist = -Infinity;
+                return;
+            }
+            const d = Math.min(Math.abs(r.top - midY), Math.abs(r.bottom - midY));
+            if (d < bestDist) {
+                bestDist = d;
+                best = i;
+            }
+        });
+        return best;
+    };
+
     const switchPage = (i) => {
         setDragOverride(null);
         setSelectedIds([]);
@@ -188,11 +215,13 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     };
 
     const handleAdd = (kind) => {
+        const target = visiblePageIndex();
         const size = defaultSizeForKind(kind);
         const x = snapToGrid(Math.max(0, (pageW - size.width) / 2));
         const y = snapToGrid(Math.max(0, (pageH - size.height) / 3));
-        const {layout: next, element} = addNewElement(currentLayout, {kind, x, y});
-        persist(next);
+        const {layout: next, element} = addNewElement(layoutFor(target), {kind, x, y});
+        setPageIndex(target);
+        persistTo(target, next);
         setSelectedIds([element.id]);
         setRightTab('element');
         setInspectorOpen(true);
@@ -202,9 +231,11 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
     // don't stack. Labels are shown so a freshly-populated page stays readable.
     const handleAddFields = (fieldIds) => {
         if (!fieldIds.length) return;
+        const target = visiblePageIndex();
+        const targetLayout = layoutFor(target);
         const size = defaultSizeForKind(ElementKind.FIELD);
         const margin = PAGE_GRID_SIZE * 2;
-        const existing = getOrderedElements(currentLayout);
+        const existing = getOrderedElements(targetLayout);
         const bottom = existing.reduce((m, el) => Math.max(m, el.y + el.height), 0);
         let startY = existing.length ? snapToGrid(bottom + PAGE_GRID_SIZE) : margin;
         if (startY + size.height > pageH - margin) startY = margin;
@@ -215,7 +246,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             itemHeight: size.height,
             startY,
         });
-        let next = currentLayout;
+        let next = targetLayout;
         const newIds = [];
         fieldIds.forEach((fieldId, i) => {
             const {layout: withEl, element} = addNewElement(next, {
@@ -227,7 +258,8 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
             next = updateElement(withEl, element.id, {style: {showFieldLabel: true}});
             newIds.push(element.id);
         });
-        persist(next);
+        setPageIndex(target);
+        persistTo(target, next);
         setSelectedIds(newIds);
         setRightTab('element');
         setInspectorOpen(true);
@@ -512,7 +544,10 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                 {config.pages.map((p, i) => (
                                     <div
                                         key={i}
-                                        ref={i === activeIndex ? restoredPageRef : undefined}
+                                        ref={(el) => {
+                                            pageRefs.current[i] = el;
+                                            if (i === activeIndex) restoredPageRef.current = el;
+                                        }}
                                         className="flex flex-col"
                                         style={{width: pageW * scale}}
                                     >
