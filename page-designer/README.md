@@ -19,7 +19,7 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 
 This is a **custom interface extension** — it runs on an Interface page (via a Custom element), not in the classic dashboard/extensions panel. You publish it to your own base with Airtable's Blocks CLI, using this repo as the source code:
 
-1. **Create a custom extension.** In Airtable, open **Builder Hub → Custom extensions** (under Developers) and click **Create extension**. On the **Pick a template** screen, keep the default **Hello world** template — this repo's code replaces the scaffold, so the bare-bones JavaScript one is all you need. Give the extension a name, pick the org unit that should be able to add it, and click **Create extension**.
+1. **Create a custom extension.** In Airtable, open **Builder Hub → Custom extensions** (under Developers) and click **Create extension**. On the **Pick a template** screen, keep the default **Hello world** template — this repo's code replaces the scaffold anyway. Give the extension a name, pick the org unit that should be able to add it, and click **Create extension**.
 
     ![Create extension: keep the Hello world template selected](assets/create-extension.png)
 
@@ -35,7 +35,7 @@ This is a **custom interface extension** — it runs on an Interface page (via a
 
     After `block init` you have a working scaffold wired to *your* extension, with dependencies installed.
 
-2. **Drop in this code.** Replace the scaffold's `frontend/` folder with the `frontend/` folder from this repo, and make sure its `block.json` points at `frontend/index.js` (this repo's `block.json` already does — you can copy that too).
+2. **Drop in this code.** Replace the scaffold's `frontend/` folder with the `frontend/` folder from this repo. (If you picked a template other than the default, copy this repo's `block.json` too.)
 
 3. **Release it:**
 

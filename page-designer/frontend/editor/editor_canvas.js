@@ -4,7 +4,8 @@
 // Gestures emit a {id: patch} map — onPreview live, onCommit on release — applied
 // to the latest local layout. Resize/rotate are single-selection only.
 
-import {useRef, useState} from 'react';
+import {useEffect, useRef, useState} from 'react';
+import {createPortal} from 'react-dom';
 import {useBase} from '@airtable/blocks/interface/ui';
 import {resolvePageSizePx, PAGE_GRID_SIZE, snapToGrid} from '../domain/page_geometry.mjs';
 import {getOrderedElements, clampElementToPage, clampGroupDelta, columnFractions} from '../domain/layout_model.mjs';
@@ -77,9 +78,35 @@ export function EditorCanvas({
     onPreview,
     onCommit,
     onDropFields,
+    onDuplicate,
+    onDelete,
+    onBringToFront,
+    onSendToBack,
 }) {
     const overlayRef = useRef(null);
     const base = useBase();
+    // Right-click menu over an element ({x, y} in viewport px). The actions run on
+    // the current selection, so opening it first selects the element under the cursor.
+    const [contextMenu, setContextMenu] = useState(null);
+    useEffect(() => {
+        if (!contextMenu) return undefined;
+        const close = () => setContextMenu(null);
+        const onKey = (e) => {
+            if (e.key === 'Escape') close();
+        };
+        window.addEventListener('scroll', close, true);
+        window.addEventListener('resize', close);
+        window.addEventListener('keydown', onKey);
+        // A click outside the extension's iframe never reaches the backdrop; the
+        // iframe losing focus is the only signal we get for it.
+        window.addEventListener('blur', close);
+        return () => {
+            window.removeEventListener('scroll', close, true);
+            window.removeEventListener('resize', close);
+            window.removeEventListener('keydown', onKey);
+            window.removeEventListener('blur', close);
+        };
+    }, [contextMenu]);
     const [marquee, setMarquee] = useState(null);
     const {width: pageW, height: pageH} = resolvePageSizePx(page);
     const elements = getOrderedElements(layout);
@@ -175,8 +202,10 @@ export function EditorCanvas({
     // shifting width between just those two (fractions always sum to 1).
     const startColumnResize = (e, el, k) => {
         const cols = resolvedLinkedColumns(el);
-        const pad = el.style.padding || 0;
-        const tableWidth = Math.max(1, el.width - 2 * pad);
+        const tableWidth = Math.max(
+            1,
+            el.width - (el.style.paddingLeft || 0) - (el.style.paddingRight || 0),
+        );
         const start = columnFractions(cols, el.linkedColumnWidths);
         const compute = (dx) => {
             const min = 0.06;
@@ -207,8 +236,8 @@ export function EditorCanvas({
         if (cols.length < 2) {
             return null;
         }
-        const pad = el.style.padding || 0;
-        const tableWidth = el.width - 2 * pad;
+        const padLeft = el.style.paddingLeft || 0;
+        const tableWidth = el.width - padLeft - (el.style.paddingRight || 0);
         const fr = columnFractions(cols, el.linkedColumnWidths);
         let cum = 0;
         return cols.slice(0, -1).map((_, k) => {
@@ -220,7 +249,7 @@ export function EditorCanvas({
                     title="Drag to resize column"
                     style={{
                         position: 'absolute',
-                        left: (pad + cum * tableWidth) * scale,
+                        left: (padLeft + cum * tableWidth) * scale,
                         top: 0,
                         height: '100%',
                         width: 10,
@@ -371,6 +400,18 @@ export function EditorCanvas({
                                 if (!selected) onSelect([element.id]);
                                 startMove(e, moveIds);
                             }}
+                            onContextMenu={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                // Keep an existing multi-selection so the menu acts on all of it.
+                                if (!selected) onSelect([element.id]);
+                                const w = 200;
+                                const h = 160;
+                                setContextMenu({
+                                    x: Math.max(8, Math.min(e.clientX, window.innerWidth - w - 8)),
+                                    y: Math.max(8, Math.min(e.clientY, window.innerHeight - h - 8)),
+                                });
+                            }}
                             style={{
                                 position: 'absolute',
                                 left: element.x * scale,
@@ -453,6 +494,94 @@ export function EditorCanvas({
                     }}
                 />
             ) : null}
+
+            {contextMenu
+                ? createPortal(
+                      <ElementContextMenu
+                          x={contextMenu.x}
+                          y={contextMenu.y}
+                          onClose={() => setContextMenu(null)}
+                          onDuplicate={onDuplicate}
+                          onDelete={onDelete}
+                          onBringToFront={onBringToFront}
+                          onSendToBack={onSendToBack}
+                      />,
+                      document.body,
+                  )
+                : null}
+        </div>
+    );
+}
+
+const MENU_MOD_KEY = /mac/i.test(typeof navigator !== 'undefined' ? navigator.userAgent : '') ? '⌘' : 'Ctrl+';
+
+function ElementContextMenu({x, y, onClose, onDuplicate, onDelete, onBringToFront, onSendToBack}) {
+    const item = (label, shortcut, handler, danger) => (
+        <button
+            type="button"
+            onClick={() => {
+                onClose();
+                if (handler) handler();
+            }}
+            onMouseEnter={(e) => {
+                e.currentTarget.style.background = danger ? '#fef3f2' : '#f2f4f8';
+            }}
+            onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'transparent';
+            }}
+            style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                gap: 16,
+                width: '100%',
+                border: 'none',
+                background: 'transparent',
+                font: 'inherit',
+                padding: '6px 10px',
+                borderRadius: 6,
+                cursor: 'pointer',
+                textAlign: 'left',
+                color: danger ? '#b42318' : '#1d1f25',
+            }}
+        >
+            <span>{label}</span>
+            {shortcut ? <span style={{fontSize: 11, color: '#8a8f98'}}>{shortcut}</span> : null}
+        </button>
+    );
+    return (
+        <div
+            // Close on pointerdown, not mousedown: the editor's pointer handling can
+            // suppress the compatibility mouse events, which left the menu stuck open.
+            onPointerDown={onClose}
+            onContextMenu={(e) => {
+                e.preventDefault();
+                onClose();
+            }}
+            style={{position: 'fixed', inset: 0, zIndex: 10000}}
+        >
+            <div
+                onPointerDown={(e) => e.stopPropagation()}
+                style={{
+                    position: 'fixed',
+                    left: x,
+                    top: y,
+                    zIndex: 10001,
+                    background: '#fff',
+                    borderRadius: 8,
+                    boxShadow: '0 8px 28px rgba(15,23,42,0.22), 0 2px 6px rgba(15,23,42,0.08)',
+                    padding: 4,
+                    width: 200,
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: 13,
+                }}
+            >
+                {item('Duplicate', `${MENU_MOD_KEY}D`, onDuplicate)}
+                {item('Bring to front', `${MENU_MOD_KEY}]`, onBringToFront)}
+                {item('Send to back', `${MENU_MOD_KEY}[`, onSendToBack)}
+                <div style={{height: 1, margin: '4px 6px', background: 'rgba(0,0,0,0.08)'}} />
+                {item('Delete', 'Del', onDelete, true)}
+            </div>
         </div>
     );
 }

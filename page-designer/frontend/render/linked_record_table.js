@@ -77,14 +77,21 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
 
     const cellStyle = {
         ...ts, // ts carries the element's textAlign (Horizontal align) so cells honor it
-        border: '1px solid rgba(0,0,0,0.15)',
+        border: `1px solid ${element.style.tableBorderColor || 'rgba(0,0,0,0.15)'}`,
         padding: '2px 5px',
         verticalAlign: 'top',
         overflowWrap: 'break-word',
     };
-    const headStyle = {...cellStyle, fontWeight: 'bold', backgroundColor: element.style.tableHeaderColor};
+    const headerTextColor = element.style.tableHeaderTextColor;
+    const headStyle = {
+        ...cellStyle,
+        fontWeight: 'bold',
+        backgroundColor: element.style.tableHeaderColor,
+        ...(headerTextColor ? {color: headerTextColor} : {}),
+    };
     const stripeRows = !!element.style.tableStripeRows;
-    const rowStyle = (i) => (stripeRows && i % 2 === 1 ? {backgroundColor: 'rgba(0,0,0,0.04)'} : undefined);
+    const stripeColor = element.style.tableStripeColor || 'rgba(0,0,0,0.04)';
+    const rowStyle = (i) => (stripeRows && i % 2 === 1 ? {backgroundColor: stripeColor} : undefined);
 
     const canModifyLinks =
         editable && record && table.hasPermissionToUpdateRecord(record, {[field.id]: undefined});
@@ -259,7 +266,10 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
             {menu
                 ? createPortal(
                       <div
-                          onMouseDown={() => setMenu(null)}
+                          // pointerdown, not mousedown: compatibility mouse events can be
+                          // suppressed by pointer handling elsewhere (same fix as the
+                          // editor's element context menu).
+                          onPointerDown={() => setMenu(null)}
                           onContextMenu={(e) => {
                               e.preventDefault();
                               setMenu(null);
@@ -267,7 +277,7 @@ export function LinkedRecordTable({element, field, record, table, editable}) {
                           style={{position: 'fixed', inset: 0, zIndex: 10000}}
                       >
                           <div
-                              onMouseDown={(e) => e.stopPropagation()}
+                              onPointerDown={(e) => e.stopPropagation()}
                               style={{
                                   position: 'fixed',
                                   left: menu.x,

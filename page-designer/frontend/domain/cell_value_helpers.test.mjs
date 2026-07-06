@@ -2,6 +2,8 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {
     extractAttachments,
+    flattenLookupValues,
+    isAttachmentLookupConfig,
     isImageAttachment,
     extractBarcodeText,
     extractSelectChoices,
@@ -18,6 +20,49 @@ test('extractAttachments filters valid entries', () => {
 test('extractAttachments handles non-array', () => {
     assert.deepEqual(extractAttachments(null), []);
     assert.deepEqual(extractAttachments('x'), []);
+});
+
+test('flattenLookupValues handles per-item and whole-array entry values', () => {
+    const perItem = [
+        {linkedRecordId: 'rec1', value: {url: 'a', filename: 'a.png'}},
+        {linkedRecordId: 'rec2', value: {url: 'b', filename: 'b.png'}},
+    ];
+    assert.equal(flattenLookupValues(perItem).length, 2);
+    const wholeArray = [
+        {linkedRecordId: 'rec1', value: [{url: 'a'}, {url: 'b'}]},
+        {linkedRecordId: 'rec2', value: null},
+    ];
+    assert.deepEqual(flattenLookupValues(wholeArray).map((v) => v.url), ['a', 'b']);
+    assert.deepEqual(flattenLookupValues(null), []);
+    assert.deepEqual(flattenLookupValues('x'), []);
+});
+
+test('flattenLookupValues feeds extractAttachments', () => {
+    const cell = [{linkedRecordId: 'rec1', value: [{url: 'u', filename: 'logo.png'}, {filename: 'no-url'}]}];
+    const attachments = extractAttachments(flattenLookupValues(cell));
+    assert.equal(attachments.length, 1);
+    assert.equal(attachments[0].filename, 'logo.png');
+});
+
+test('isAttachmentLookupConfig requires a valid attachments result', () => {
+    const good = {
+        type: 'multipleLookupValues',
+        options: {isValid: true, result: {type: 'multipleAttachments'}},
+    };
+    assert.equal(isAttachmentLookupConfig(good), true);
+    assert.equal(isAttachmentLookupConfig({type: 'multipleAttachments'}), false);
+    assert.equal(
+        isAttachmentLookupConfig({
+            type: 'multipleLookupValues',
+            options: {isValid: true, result: {type: 'singleLineText'}},
+        }),
+        false,
+    );
+    assert.equal(
+        isAttachmentLookupConfig({type: 'multipleLookupValues', options: {isValid: false}}),
+        false,
+    );
+    assert.equal(isAttachmentLookupConfig(null), false);
 });
 
 test('isImageAttachment by mime and by extension', () => {

@@ -95,6 +95,26 @@ export function duplicateElement(layout, id, idFactory = generateElementId) {
     return {layout: addElement(layout, clone), element: clone};
 }
 
+// Deep-copies a layout with fresh element ids (same order and geometry). Used to
+// duplicate a whole page, where reusing ids would collide with per-element undo
+// coalescing keys and selection state.
+export function cloneLayoutWithNewIds(layout, idFactory = generateElementId) {
+    const order = [];
+    const elementsById = {};
+    for (const src of getOrderedElements(layout)) {
+        const id = idFactory();
+        order.push(id);
+        elementsById[id] = {
+            ...src,
+            id,
+            style: {...src.style},
+            linkedColumns: [...src.linkedColumns],
+            linkedColumnWidths: {...src.linkedColumnWidths},
+        };
+    }
+    return {order, elementsById};
+}
+
 // Z-order: order array is back-to-front (last = topmost).
 function reorder(layout, id, toIndex) {
     if (!layout.elementsById[id]) {
