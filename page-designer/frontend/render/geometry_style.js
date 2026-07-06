@@ -24,7 +24,7 @@ export function elementContentStyle(style) {
         flexDirection: 'column',
         justifyContent: ALIGN_TO_JUSTIFY[style.verticalAlign] || 'flex-start',
         boxSizing: 'border-box',
-        padding: `${style.padding || 0}px`,
+        padding: `${style.paddingTop || 0}px ${style.paddingRight || 0}px ${style.paddingBottom || 0}px ${style.paddingLeft || 0}px`,
         backgroundColor:
             style.backgroundColor && style.backgroundColor !== 'transparent'
                 ? style.backgroundColor

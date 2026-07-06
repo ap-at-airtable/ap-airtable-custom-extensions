@@ -41,6 +41,7 @@ import {
     RedoIcon,
     PlusIcon,
     TrashIcon,
+    DuplicateIcon,
     ChevronUpIcon,
     ChevronDownIcon,
     FieldIcon,
@@ -205,6 +206,12 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
         setDragOverride(null);
         // Keep the same page active: shift down if we removed one before it, else clamp.
         setPageIndex((cur) => (i < cur ? cur - 1 : Math.min(cur, config.pages.length - 2)));
+    };
+    const handleDuplicatePage = (i) => {
+        config.duplicatePage(i).then(() => {
+            setError(null);
+            switchPage(i + 1); // the copy lands right after its source
+        }, onSaveError);
     };
     // Move a page one slot (to = from ± 1). Keep the active page focused through the swap.
     const handleMovePage = (from, to) => {
@@ -471,7 +478,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                         />
                         {onPreview ? (
                             <Button
-                                variant="default"
+                                variant="primary"
                                 size="sm"
                                 icon={EyeIcon}
                                 onClick={onPreview}
@@ -481,7 +488,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                             </Button>
                         ) : null}
                         <Button
-                            variant="primary"
+                            variant="default"
                             size="sm"
                             icon={PrinterIcon}
                             onClick={printNow}
@@ -580,39 +587,54 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                                         Delete
                                                     </button>
                                                 </div>
-                                            ) : multiPage ? (
+                                            ) : (
                                                 <div className="pointer-events-auto flex items-center gap-0.5">
-                                                    <button
-                                                        type="button"
-                                                        aria-label={`Move page ${i + 1} up`}
-                                                        title="Move up"
-                                                        disabled={i === 0}
-                                                        onClick={() => handleMovePage(i, i - 1)}
-                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
-                                                    >
-                                                        <ChevronUpIcon size={15} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        aria-label={`Move page ${i + 1} down`}
-                                                        title="Move down"
-                                                        disabled={i === config.pages.length - 1}
-                                                        onClick={() => handleMovePage(i, i + 1)}
-                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
-                                                    >
-                                                        <ChevronDownIcon size={15} />
-                                                    </button>
-                                                    <button
-                                                        type="button"
-                                                        aria-label={`Delete page ${i + 1}`}
-                                                        title="Delete page"
-                                                        onClick={() => setConfirmDeletePage(i)}
-                                                        className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
-                                                    >
-                                                        <TrashIcon size={15} />
-                                                    </button>
+                                                    {config.pages.length < config.maxPages ? (
+                                                        <button
+                                                            type="button"
+                                                            aria-label={`Duplicate page ${i + 1}`}
+                                                            title="Duplicate page"
+                                                            onClick={() => handleDuplicatePage(i)}
+                                                            className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 dark:hover:bg-gray-gray700"
+                                                        >
+                                                            <DuplicateIcon size={15} />
+                                                        </button>
+                                                    ) : null}
+                                                    {multiPage ? (
+                                                        <>
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`Move page ${i + 1} up`}
+                                                                title="Move up"
+                                                                disabled={i === 0}
+                                                                onClick={() => handleMovePage(i, i - 1)}
+                                                                className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                            >
+                                                                <ChevronUpIcon size={15} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`Move page ${i + 1} down`}
+                                                                title="Move down"
+                                                                disabled={i === config.pages.length - 1}
+                                                                onClick={() => handleMovePage(i, i + 1)}
+                                                                className="flex items-center rounded p-1 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray700"
+                                                            >
+                                                                <ChevronDownIcon size={15} />
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                aria-label={`Delete page ${i + 1}`}
+                                                                title="Delete page"
+                                                                onClick={() => setConfirmDeletePage(i)}
+                                                                className="flex items-center rounded p-1 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
+                                                            >
+                                                                <TrashIcon size={15} />
+                                                            </button>
+                                                        </>
+                                                    ) : null}
                                                 </div>
-                                            ) : null}
+                                            )}
                                         </div>
                                         <EditorCanvas
                                             page={{...config.page, backgroundColor: p.backgroundColor}}
@@ -640,6 +662,10 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                                 persistTo(i, updateElements(config.pages[i].layout, patches))
                                             }
                                             onDropFields={(fieldIds, x, y) => handleDropFields(i, fieldIds, x, y)}
+                                            onDuplicate={duplicateSelected}
+                                            onDelete={deleteSelected}
+                                            onBringToFront={bringSelectedToFront}
+                                            onSendToBack={sendSelectedToBack}
                                         />
                                     </div>
                                 ))}
@@ -660,6 +686,7 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                             </div>
                         </div>
                         <ZoomControl
+                            align="right"
                             scale={scale}
                             isFit={zoom == null}
                             onOut={() => applyZoom(scale - 0.1)}
@@ -738,7 +765,143 @@ export function EditorMode({table, records, config, onPreview, showGrid, onToggl
                                     onSendToBack={sendSelectedToBack}
                                 />
                             ) : (
-                                <PageSettingsPanel page={effectivePage} onChangePage={persistPage} />
+                                <>
+                                    <PageSettingsPanel page={effectivePage} onChangePage={persistPage} />
+                                    <div className="border-t border-gray-gray200 dark:border-gray-gray700">
+                                        <div className="px-4 pb-1 pt-4 text-[11px] font-semibold tracking-wide text-gray-gray500">
+                                            PAGES
+                                        </div>
+                                        <div className="px-2 pb-3">
+                                            {config.pages.map((p, i) =>
+                                                confirmDeletePage === i ? (
+                                                    <div
+                                                        key={i}
+                                                        className="flex items-center justify-between gap-1.5 rounded px-2 py-1.5 text-[11px]"
+                                                    >
+                                                        <span className="text-gray-gray500">Delete this page?</span>
+                                                        <span className="flex items-center gap-1.5">
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => setConfirmDeletePage(null)}
+                                                                className="rounded px-1.5 py-0.5 font-medium text-gray-gray500 hover:bg-gray-gray100 dark:hover:bg-gray-gray700"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => {
+                                                                    setConfirmDeletePage(null);
+                                                                    handleRemovePage(i);
+                                                                }}
+                                                                className="rounded bg-red-red px-1.5 py-0.5 font-medium text-white hover:opacity-90"
+                                                            >
+                                                                Delete
+                                                            </button>
+                                                        </span>
+                                                    </div>
+                                                ) : (
+                                                    <div
+                                                        key={i}
+                                                        role="button"
+                                                        tabIndex={0}
+                                                        onClick={() => {
+                                                            switchPage(i);
+                                                            pageRefs.current[i]?.scrollIntoView({block: 'start', behavior: 'smooth'});
+                                                        }}
+                                                        onKeyDown={(e) => {
+                                                            if (e.key === 'Enter' || e.key === ' ') {
+                                                                e.preventDefault();
+                                                                switchPage(i);
+                                                                pageRefs.current[i]?.scrollIntoView({block: 'start', behavior: 'smooth'});
+                                                            }
+                                                        }}
+                                                        className={
+                                                            'group flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs ' +
+                                                            (i === activeIndex
+                                                                ? 'bg-gray-gray100 font-medium text-gray-gray700 dark:bg-gray-gray700 dark:text-gray-gray100'
+                                                                : 'text-gray-gray600 hover:bg-gray-gray50 dark:text-gray-gray300 dark:hover:bg-gray-gray700')
+                                                        }
+                                                    >
+                                                        <span
+                                                            aria-hidden="true"
+                                                            className="h-3.5 w-3.5 shrink-0 rounded-sm border border-gray-gray200 dark:border-gray-gray600"
+                                                            style={{backgroundColor: p.backgroundColor}}
+                                                        />
+                                                        <span className="min-w-0 flex-1 truncate">Page {i + 1}</span>
+                                                        <span className="text-[11px] text-gray-gray400">
+                                                            {p.layout.order.length}
+                                                        </span>
+                                                        <span className="hidden items-center gap-0.5 group-hover:flex">
+                                                            {config.pages.length < config.maxPages ? (
+                                                                <button
+                                                                    type="button"
+                                                                    aria-label={`Duplicate page ${i + 1}`}
+                                                                    title="Duplicate page"
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        handleDuplicatePage(i);
+                                                                    }}
+                                                                    className="flex items-center rounded p-0.5 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 dark:hover:bg-gray-gray600"
+                                                                >
+                                                                    <DuplicateIcon size={13} />
+                                                                </button>
+                                                            ) : null}
+                                                            {multiPage ? (
+                                                                <>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Move page ${i + 1} up`}
+                                                                        disabled={i === 0}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleMovePage(i, i - 1);
+                                                                        }}
+                                                                        className="flex items-center rounded p-0.5 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray600"
+                                                                    >
+                                                                        <ChevronUpIcon size={13} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Move page ${i + 1} down`}
+                                                                        disabled={i === config.pages.length - 1}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            handleMovePage(i, i + 1);
+                                                                        }}
+                                                                        className="flex items-center rounded p-0.5 text-gray-gray400 hover:bg-gray-gray100 hover:text-gray-gray600 disabled:opacity-30 dark:hover:bg-gray-gray600"
+                                                                    >
+                                                                        <ChevronDownIcon size={13} />
+                                                                    </button>
+                                                                    <button
+                                                                        type="button"
+                                                                        aria-label={`Delete page ${i + 1}`}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            setConfirmDeletePage(i);
+                                                                        }}
+                                                                        className="flex items-center rounded p-0.5 text-gray-gray400 hover:bg-red-redLight2 hover:text-red-red dark:hover:bg-red-redDark1"
+                                                                    >
+                                                                        <TrashIcon size={13} />
+                                                                    </button>
+                                                                </>
+                                                            ) : null}
+                                                        </span>
+                                                    </div>
+                                                ),
+                                            )}
+                                            {config.pages.length < config.maxPages ? (
+                                                <button
+                                                    type="button"
+                                                    onClick={handleAddPage}
+                                                    className="mt-0.5 flex w-full items-center gap-2 rounded px-2 py-1.5 text-xs font-medium text-blue-blue hover:bg-gray-gray50 dark:hover:bg-gray-gray700"
+                                                >
+                                                    <PlusIcon size={13} />
+                                                    Add page
+                                                </button>
+                                            ) : null}
+                                        </div>
+                                    </div>
+                                </>
                             )}
                         </div>
                     </div>

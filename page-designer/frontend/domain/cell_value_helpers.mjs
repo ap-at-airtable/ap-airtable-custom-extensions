@@ -11,6 +11,43 @@ export function extractAttachments(cellValue) {
     return cellValue.filter((a) => a && typeof a.url === 'string');
 }
 
+// MULTIPLE_LOOKUP_VALUES cell value -> the looked-up values, flattened. Entries
+// are {linkedRecordId, value}; an array-valued source (e.g. attachments) may
+// arrive as one item per entry or as the source cell's whole array, so both
+// shapes flatten to a single list.
+export function flattenLookupValues(cellValue) {
+    if (!Array.isArray(cellValue)) {
+        return [];
+    }
+    const out = [];
+    for (const entry of cellValue) {
+        if (!entry || typeof entry !== 'object') {
+            continue;
+        }
+        const value = 'value' in entry ? entry.value : entry;
+        if (Array.isArray(value)) {
+            out.push(...value);
+        } else if (value != null) {
+            out.push(value);
+        }
+    }
+    return out;
+}
+
+// True for a lookup field whose looked-up values are attachments (field type
+// strings match the SDK's FieldType enum values; kept literal so this stays a
+// pure .mjs helper).
+export function isAttachmentLookupConfig(config) {
+    return Boolean(
+        config &&
+            config.type === 'multipleLookupValues' &&
+            config.options &&
+            config.options.isValid &&
+            config.options.result &&
+            config.options.result.type === 'multipleAttachments',
+    );
+}
+
 // A user-typed static image URL is untrusted. Only http(s) is allowed as an
 // <img src>: this blocks javascript:/blob:/unknown schemes and, by rejecting
 // data: URLs, also stops a pasted base64 image from blowing the GlobalConfig

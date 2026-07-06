@@ -32,6 +32,10 @@ export const ImageFit = {
     FILL: 'fill',
 };
 
+// Starter content for a new Text element; the inspector treats it as a
+// placeholder (focus selects it all so typing replaces it).
+export const DEFAULT_TEXT_CONTENT = 'Text';
+
 export const TextAlign = {LEFT: 'left', CENTER: 'center', RIGHT: 'right'};
 export const VerticalAlign = {TOP: 'top', MIDDLE: 'middle', BOTTOM: 'bottom'};
 
@@ -60,7 +64,10 @@ export function defaultStyle() {
         backgroundColor: 'transparent',
         textAlign: TextAlign.LEFT,
         verticalAlign: VerticalAlign.TOP,
-        padding: 0,
+        paddingTop: 0,
+        paddingRight: 0,
+        paddingBottom: 0,
+        paddingLeft: 0,
         borderWidth: 0,
         borderColor: '#cccccc',
         borderRadius: 0,
@@ -70,6 +77,11 @@ export function defaultStyle() {
         // Linked-record table styling: header cell fill and zebra row shading.
         tableHeaderColor: '#f3f3f5',
         tableStripeRows: true,
+        // Empty = header text inherits the element's text color (body text always does).
+        tableHeaderTextColor: '',
+        // Defaults match the previous hardcoded rgba values as rendered on white.
+        tableBorderColor: '#d9d9d9',
+        tableStripeColor: '#f4f4f5',
         // How a select value renders: 'text', 'pill' (colored chip), or 'stepper'
         // (single-select only). Text/pill apply to single- and multi-select.
         selectDisplay: 'text',
@@ -109,7 +121,7 @@ export function makeElement({id, kind, x, y, fieldId = null, overrides = {}}) {
         height: size.height,
         rotation: 0,
         fieldId,
-        text: kind === ElementKind.TEXT ? 'Text' : '',
+        text: kind === ElementKind.TEXT ? DEFAULT_TEXT_CONTENT : '',
         imageSource: kind === ElementKind.IMAGE ? ImageSource.ATTACHMENT : null,
         imageUrl: '',
         imageAlt: '', // alt text for a static image (attachment images use the field name)
@@ -133,6 +145,17 @@ export function hydrateElement(raw) {
     }
     const base = makeElement({id: raw.id, kind: raw.kind, x: 0, y: 0});
     const num = (v, fallback) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+    const rawStyle = raw.style && typeof raw.style === 'object' ? raw.style : {};
+    const style = {...base.style, ...rawStyle};
+    // Older docs stored one uniform `padding`; spread it to the per-side keys
+    // (only where a per-side value wasn't already written).
+    if (typeof rawStyle.padding === 'number' && Number.isFinite(rawStyle.padding)) {
+        for (const side of ['paddingTop', 'paddingRight', 'paddingBottom', 'paddingLeft']) {
+            if (typeof rawStyle[side] !== 'number') {
+                style[side] = rawStyle.padding;
+            }
+        }
+    }
     return {
         ...base,
         ...raw,
@@ -148,7 +171,7 @@ export function hydrateElement(raw) {
             raw.linkedColumnWidths && typeof raw.linkedColumnWidths === 'object' && !Array.isArray(raw.linkedColumnWidths)
                 ? raw.linkedColumnWidths
                 : {},
-        style: {...base.style, ...(raw.style && typeof raw.style === 'object' ? raw.style : {})},
+        style,
     };
 }
 

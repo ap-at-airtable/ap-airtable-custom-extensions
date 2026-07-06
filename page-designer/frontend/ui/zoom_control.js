@@ -10,10 +10,13 @@ function Divider() {
     return <span className="mx-0.5 h-5 w-px self-center bg-gray-gray200 dark:bg-gray-gray700" />;
 }
 
-export function ZoomControl({scale, isFit, onOut, onIn, onReset, onPrev, onNext, prevDisabled, nextDisabled}) {
+export function ZoomControl({scale, isFit, onOut, onIn, onReset, onPrev, onNext, prevDisabled, nextDisabled, align = 'center'}) {
     const hasNav = Boolean(onPrev || onNext);
+    // The editor pins the pill bottom-right so it never covers footer elements being
+    // edited; the view keeps its pager pill centered (conventional for paging).
+    const alignClass = align === 'right' ? 'justify-end pr-3' : 'justify-center';
     return (
-        <div className="pd-screen-only pointer-events-none absolute inset-x-0 bottom-3 flex justify-center">
+        <div className={`pd-screen-only pointer-events-none absolute inset-x-0 bottom-3 flex ${alignClass}`}>
             <div className="pointer-events-auto flex items-center gap-1 rounded-lg border border-gray-gray200 bg-white p-1 shadow-md dark:border-gray-gray700 dark:bg-gray-gray800">
                 {hasNav ? (
                     <>

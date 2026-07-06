@@ -6,6 +6,7 @@ import {
     updateElement,
     removeElement,
     duplicateElement,
+    cloneLayoutWithNewIds,
     getOrderedElements,
     bringToFront,
     sendToBack,
@@ -210,6 +211,44 @@ test('duplicateElement offsets and adds new id', () => {
     assert.equal(next.order.length, 4);
     assert.equal(element.x, layout.elementsById.id1.x + 20);
     assert.notEqual(element.id, 'id1');
+});
+
+test('hydrateLayout migrates legacy uniform padding to per-side keys', () => {
+    const layout = hydrateLayout({
+        order: ['a', 'b'],
+        elementsById: {
+            a: {id: 'a', kind: ElementKind.TEXT, style: {padding: 12}},
+            // An explicit per-side value wins over the legacy uniform one.
+            b: {id: 'b', kind: ElementKind.TEXT, style: {padding: 12, paddingTop: 3}},
+        },
+    });
+    const a = layout.elementsById.a.style;
+    assert.deepEqual(
+        [a.paddingTop, a.paddingRight, a.paddingBottom, a.paddingLeft],
+        [12, 12, 12, 12],
+    );
+    const b = layout.elementsById.b.style;
+    assert.deepEqual([b.paddingTop, b.paddingRight], [3, 12]);
+});
+
+test('cloneLayoutWithNewIds copies order and elements with fresh ids', () => {
+    const layout = seededLayout();
+    _seq = 100;
+    const clone = cloneLayoutWithNewIds(layout, idFactory);
+    assert.equal(clone.order.length, layout.order.length);
+    for (let i = 0; i < clone.order.length; i += 1) {
+        const src = layout.elementsById[layout.order[i]];
+        const copy = clone.elementsById[clone.order[i]];
+        assert.notEqual(copy.id, src.id);
+        assert.equal(copy.kind, src.kind);
+        assert.equal(copy.x, src.x);
+        assert.equal(copy.fieldId, src.fieldId);
+        // Mutable containers must not be shared with the source element.
+        assert.notEqual(copy.style, src.style);
+        assert.notEqual(copy.linkedColumns, src.linkedColumns);
+        assert.notEqual(copy.linkedColumnWidths, src.linkedColumnWidths);
+    }
+    assert.deepEqual(layout.order, ['id1', 'id2', 'id3'], 'source layout untouched');
 });
 
 test('z-order operations', () => {

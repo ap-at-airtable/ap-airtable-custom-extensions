@@ -4,7 +4,13 @@
 
 import {useState} from 'react';
 import {ImageSource} from '../domain/element_types.mjs';
-import {extractAttachments, isImageAttachment, isSafeImageUrl} from '../domain/cell_value_helpers.mjs';
+import {
+    extractAttachments,
+    flattenLookupValues,
+    isAttachmentLookupConfig,
+    isImageAttachment,
+    isSafeImageUrl,
+} from '../domain/cell_value_helpers.mjs';
 import {ImageIcon} from '../ui/icons.js';
 
 function Placeholder({label}) {
@@ -24,7 +30,11 @@ function resolveAttachmentUrl(record, table, element) {
     if (!field) {
         return null;
     }
-    const attachments = extractAttachments(record.getCellValue(field));
+    const cellValue = record.getCellValue(field);
+    // Attachments can also arrive via a lookup field (e.g. "Logo (from Client)").
+    const attachments = extractAttachments(
+        isAttachmentLookupConfig(field.config) ? flattenLookupValues(cellValue) : cellValue,
+    );
     const image = attachments.find(isImageAttachment) || attachments[0];
     if (!image) {
         return null;

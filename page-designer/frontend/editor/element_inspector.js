@@ -15,8 +15,10 @@ import {
     VerticalAlign,
     BarcodeFormat,
     LinkedRecordDisplay,
+    DEFAULT_TEXT_CONTENT,
 } from '../domain/element_types.mjs';
 import {isEditableFieldType, editableInputKind} from '../domain/editable_fields.mjs';
+import {isAttachmentLookupConfig} from '../domain/cell_value_helpers.mjs';
 import {AlignMode, DistributeAxis} from '../domain/alignment.mjs';
 import {
     IconButton,
@@ -150,11 +152,17 @@ export function ElementInspector({
         kind === ElementKind.BARCODE ||
         kind === ElementKind.QR_CODE;
 
-    // IMAGE with an attachment source can only bind to attachment fields.
+    // IMAGE with an attachment source can bind to attachment fields or to lookups
+    // that resolve to attachments (e.g. a logo looked up from a linked record).
     const restrictToAttachments =
         kind === ElementKind.IMAGE && element.imageSource === ImageSource.ATTACHMENT;
     const fieldOptions = table.fields
-        .filter((f) => !restrictToAttachments || f.config.type === FieldType.MULTIPLE_ATTACHMENTS)
+        .filter(
+            (f) =>
+                !restrictToAttachments ||
+                f.config.type === FieldType.MULTIPLE_ATTACHMENTS ||
+                isAttachmentLookupConfig(f.config),
+        )
         .map((f) => ({value: f.id, label: f.name}));
 
     const boundField = element.fieldId ? table.getFieldByIdIfExists(element.fieldId) : null;
@@ -264,27 +272,12 @@ export function ElementInspector({
                             />
                         </Field>
                     ) : null}
-                    {isLinkedField &&
-                    style.linkedRecordDisplay === LinkedRecordDisplay.TABLE &&
-                    linkedTable ? (
-                        <>
-                            <LinkedColumnsField
-                                linkedTable={linkedTable}
-                                linkedColumns={linkedColumns}
-                                onChange={onChange}
-                            />
-                            <Field label="Header fill">
-                                <ColorInput
-                                    value={style.tableHeaderColor}
-                                    onChange={(tableHeaderColor) => setStyle({tableHeaderColor})}
-                                />
-                            </Field>
-                            <Toggle
-                                label="Alternate row shading"
-                                checked={!!style.tableStripeRows}
-                                onChange={(tableStripeRows) => setStyle({tableStripeRows})}
-                            />
-                        </>
+                    {kind === ElementKind.FIELD ? (
+                        <Toggle
+                            label="Show field label"
+                            checked={!!style.showFieldLabel}
+                            onChange={(showFieldLabel) => setStyle({showFieldLabel})}
+                        />
                     ) : null}
                     {isEditableField ||
                     (isLinkedField && style.linkedRecordDisplay === LinkedRecordDisplay.TABLE) ? (
@@ -297,10 +290,60 @@ export function ElementInspector({
                 </Section>
             ) : null}
 
+            {isLinkedField && style.linkedRecordDisplay === LinkedRecordDisplay.TABLE && linkedTable ? (
+                <Section title="Table" defaultOpen>
+                    <LinkedColumnsField
+                        linkedTable={linkedTable}
+                        linkedColumns={linkedColumns}
+                        onChange={onChange}
+                    />
+                    <Field label="Header fill">
+                        <ColorInput
+                            value={style.tableHeaderColor}
+                            onChange={(tableHeaderColor) => setStyle({tableHeaderColor})}
+                        />
+                    </Field>
+                    <Field label="Header text" hint="Leave empty to match the element's text color.">
+                        <ColorInput
+                            value={style.tableHeaderTextColor}
+                            onChange={(tableHeaderTextColor) => setStyle({tableHeaderTextColor})}
+                        />
+                    </Field>
+                    <Field label="Grid lines">
+                        <ColorInput
+                            value={style.tableBorderColor}
+                            onChange={(tableBorderColor) => setStyle({tableBorderColor})}
+                        />
+                    </Field>
+                    <Toggle
+                        label="Row shading"
+                        checked={!!style.tableStripeRows}
+                        onChange={(tableStripeRows) => setStyle({tableStripeRows})}
+                    />
+                    {style.tableStripeRows ? (
+                        <Field label="Shading color">
+                            <ColorInput
+                                value={style.tableStripeColor}
+                                onChange={(tableStripeColor) => setStyle({tableStripeColor})}
+                            />
+                        </Field>
+                    ) : null}
+                </Section>
+            ) : null}
+
             {kind === ElementKind.TEXT ? (
                 <Section title="Content" defaultOpen>
                     <Field hint="Type text, and use {Field name} to insert record values.">
-                        <TextArea value={element.text} onChange={(text) => onChange({text})} />
+                        <TextArea
+                            value={element.text}
+                            onChange={(text) => onChange({text})}
+                            onFocus={(e) => {
+                                // Placeholder behavior: typing replaces the starter "Text".
+                                if (e.target.value === DEFAULT_TEXT_CONTENT) {
+                                    e.target.select();
+                                }
+                            }}
+                        />
                     </Field>
                     <Select
                         value=""
@@ -439,13 +482,6 @@ export function ElementInspector({
                             onChange={(verticalAlign) => setStyle({verticalAlign})}
                         />
                     </Field>
-                    {kind === ElementKind.FIELD ? (
-                        <Toggle
-                            label="Show field label"
-                            checked={!!style.showFieldLabel}
-                            onChange={(showFieldLabel) => setStyle({showFieldLabel})}
-                        />
-                    ) : null}
                 </Section>
             ) : null}
 
@@ -476,14 +512,42 @@ export function ElementInspector({
                             onChange={(backgroundColor) => setStyle({backgroundColor})}
                         />
                     </Field>
-                    <Field label="Padding">
-                        <NumberInput
-                            value={style.padding}
-                            min={0}
-                            suffix="px"
-                            onChange={(padding) => setStyle({padding})}
-                        />
-                    </Field>
+                    <Row>
+                        <Field label="Padding top">
+                            <NumberInput
+                                value={style.paddingTop}
+                                min={0}
+                                suffix="px"
+                                onChange={(paddingTop) => setStyle({paddingTop})}
+                            />
+                        </Field>
+                        <Field label="Padding bottom">
+                            <NumberInput
+                                value={style.paddingBottom}
+                                min={0}
+                                suffix="px"
+                                onChange={(paddingBottom) => setStyle({paddingBottom})}
+                            />
+                        </Field>
+                    </Row>
+                    <Row>
+                        <Field label="Padding left">
+                            <NumberInput
+                                value={style.paddingLeft}
+                                min={0}
+                                suffix="px"
+                                onChange={(paddingLeft) => setStyle({paddingLeft})}
+                            />
+                        </Field>
+                        <Field label="Padding right">
+                            <NumberInput
+                                value={style.paddingRight}
+                                min={0}
+                                suffix="px"
+                                onChange={(paddingRight) => setStyle({paddingRight})}
+                            />
+                        </Field>
+                    </Row>
                     <Row>
                         <Field label="Border width">
                             <NumberInput
@@ -493,7 +557,7 @@ export function ElementInspector({
                                 onChange={(borderWidth) => setStyle({borderWidth})}
                             />
                         </Field>
-                        <Field label="Border radius">
+                        <Field label="Corner radius">
                             <NumberInput
                                 value={style.borderRadius}
                                 min={0}

@@ -6,7 +6,7 @@
 import {useCallback, useEffect, useMemo, useRef, useState} from 'react';
 import {useGlobalConfig} from '@airtable/blocks/interface/ui';
 import {ConfigKey, defaultPage, defaultPageEntry, SCHEMA_VERSION} from '../domain/config_keys.mjs';
-import {hydratePages} from '../domain/layout_model.mjs';
+import {cloneLayoutWithNewIds, hydratePages} from '../domain/layout_model.mjs';
 
 // The whole document shares one ~150kB GlobalConfig ceiling.
 const MAX_DOC_BYTES = 145000;
@@ -152,6 +152,22 @@ export function useConfigDocument() {
         return writePages([...docRef.current.pages, defaultPageEntry()]);
     }, [writePages]);
 
+    // Inserts a copy of pages[index] right after it. Elements get fresh ids so the
+    // copy doesn't share undo-coalescing keys or selection with the source page.
+    const duplicatePage = useCallback(
+        (index) => {
+            const pages = docRef.current.pages;
+            const src = pages[index];
+            if (!src || pages.length >= MAX_PAGES) {
+                return Promise.resolve();
+            }
+            const copy = {...src, layout: cloneLayoutWithNewIds(src.layout)};
+            const next = [...pages.slice(0, index + 1), copy, ...pages.slice(index + 1)];
+            return writePages(next);
+        },
+        [writePages],
+    );
+
     const removePage = useCallback(
         (index) => {
             if (docRef.current.pages.length <= 1) {
@@ -218,6 +234,7 @@ export function useConfigDocument() {
         setBackground,
         setPageGeometry,
         addPage,
+        duplicatePage,
         removePage,
         movePage,
         undo,
