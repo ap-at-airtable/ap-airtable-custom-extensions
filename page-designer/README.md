@@ -4,6 +4,8 @@ Design pixel-perfect, printable pages straight from your records, without leavin
 
 Good for invoices, quotes, and work orders, packing slips and shipping labels, name badges and event tickets, product labels with real barcodes and QR codes, and certificates or spec sheets.
 
+New here? The **[user guide](./GUIDE.md)** walks through every feature — the editor, pages, elements, linked-record tables, inline editing, presenting, and printing.
+
 ## Features
 
 - Drag, resize, and rotate fields, text, images, lines, barcodes, and QR codes on a real page canvas
