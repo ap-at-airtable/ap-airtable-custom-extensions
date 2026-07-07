@@ -6,8 +6,6 @@ Replace Slido (out-of-band audience interaction tool) with a native Airtable Int
 
 ## Base & Schema
 
-**Base ID:** `appr8OnXr0Cfg0nSc`
-
 ### Tables
 
 **Events** — Name, Date, Status (includes "Live"), Share Code, Description, Polls (linked), Q&A (linked)
