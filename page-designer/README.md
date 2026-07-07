@@ -57,7 +57,7 @@ This is a **custom interface extension** — it runs on an Interface page (via a
 
 It's built on Airtable's interface-extensions **preview SDK** (`@airtable/blocks@interface-alpha`), which is pre-release — expect occasional API drift if you upgrade it. If you edit the Tailwind styles, regenerate the precompiled CSS with `npm run build:css`. Unit tests run with `node --test`.
 
-Heads-up for contributors: the committed `package-lock.json` was generated behind a corporate npm proxy, so its `resolved` URLs aren't publicly reachable — `npm ci` will fail outside that network. Use the scaffold flow above (recommended), or `npm install` to resolve dependencies fresh from the public registry.
+The committed `package-lock.json` resolves against the public npm registry, so `npm ci` gives you the exact pinned dependency tree.
 
 ## Notes
 
