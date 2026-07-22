@@ -6,6 +6,8 @@ Good for invoices, quotes, and work orders, packing slips and shipping labels, n
 
 New here? The **[user guide](./GUIDE.md)** walks through every feature — the editor, pages, elements, linked-record tables, inline editing, presenting, and printing.
 
+Want the render-and-print half in one file you can paste into Omni's "Edit source code" editor? See **[`source.tsx`](./source.tsx)** — a self-contained Custom Element with no build step. You author the layout as an in-source constant instead of the drag editor (Omni's source-only sandbox can't persist a design), and barcodes/QR are omitted.
+
 ## Features
 
 - Drag, resize, and rotate fields, text, images, lines, barcodes, and QR codes on a real page canvas
